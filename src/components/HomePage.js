@@ -121,7 +121,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PersonIcon from '@mui/icons-material/Person';
 import StudentOpinions from './StudentOpinions';  // Import the slider component
 import './HomePage.css';
-
+import GoogleCalendar from '../components/GoogleCalendar'
 function HomePage() {
   const [userRole, setUserRole] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -151,8 +151,8 @@ function HomePage() {
           ברוכים הבאים לאתר הלמידה שלי
         </Typography>
 
-        <CalendarComponent userRole={userRole} />
-
+        {/* <CalendarComponent userRole={userRole} /> */}
+        <GoogleCalendar/>
         <Grid container spacing={4} style={{ marginTop: '2rem' }}>
           <Grid item xs={12} md={4}>
             <Paper className="homepage-paper">
