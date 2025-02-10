@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Grid, Paper } from '@mui/material';
-import CalendarComponent from './CalendarComponent';
 import GoogleCalendar from '../components/GoogleCalendar';
 import { auth } from '../firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -12,7 +11,7 @@ import StudentOpinions from './StudentOpinions';
 import './HomePage.css';
 
 function HomePage() {
-  const [userRole, setUserRole] = useState('');
+  const [userRole='teacher', setUserRole] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -21,7 +20,7 @@ function HomePage() {
       if (!user) {
         navigate('/login');
       } else {
-        setUserRole('teacher');  // Example role; replace with actual role fetching logic
+        setUserRole(userRole);  // Example role; replace with actual role fetching logic
         setIsLoading(false);
       }
     });

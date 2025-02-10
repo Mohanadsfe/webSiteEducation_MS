@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, Container, Paper, Grid, TextField, MenuItem, Select, Button, InputLabel, FormControl } from '@mui/material';
+import { Typography, Container, Grid, TextField, MenuItem, Select, Button, InputLabel, FormControl } from '@mui/material';
 import { collection, addDoc, Timestamp, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import './AddSubject.css';
@@ -8,8 +8,7 @@ function AddOpinion() {
   const [studentName, setStudentName] = useState('');
   const [opinion, setOpinion] = useState('');
   const [subject, setSubject] = useState('');
-  const [opinions, setOpinions] = useState([]);
-  const [currentSlide, setCurrentSlide] = useState(0);
+  const [setOpinions] = useState([]);
 
   const subjects = [
     'אלגברה לינארית 1',
@@ -65,13 +64,7 @@ function AddOpinion() {
     fetchOpinions();
   }, []);
 
-  const handleNextSlide = () => {
-    setCurrentSlide((prevSlide) => (prevSlide + 1) % opinions.length);
-  };
-
-  const handlePrevSlide = () => {
-    setCurrentSlide((prevSlide) => (prevSlide - 1 + opinions.length) % opinions.length);
-  };
+ 
 
   return (
     <Container maxWidth="sm" style={{ marginTop: '2rem' }}>
