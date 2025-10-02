@@ -6,6 +6,7 @@ import About from './pages/About/AboutUs';
 import Contact from './pages/Contact/ContactUs';
 import LoginPage from './pages/Auth/LoginPage';
 import SignUpPage from './pages/Auth/SignUpPage';
+import ForgotPassword from './pages/Auth/ForgotPassword';
 import BundlesPage from './pages/Bundles/BundlesPage';
 import TeacherDashboard from './components/common/TeacherDashboard';
 import StudentDashboard from './components/common/StudentDashboard';
@@ -15,7 +16,7 @@ import TeacherApprovals from './pages/Admin/TeacherApprovals';
 
 function AppContent() {
   const location = useLocation();
-  const hideNavbarRoutes = ['/login', '/signup'];
+  const hideNavbarRoutes = ['/login', '/signup', '/forgot-password'];
   const shouldHideNavbar = hideNavbarRoutes.includes(location.pathname);
 
   return (
@@ -25,6 +26,7 @@ function AppContent() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/bundles" element={<BundlesPage />} />

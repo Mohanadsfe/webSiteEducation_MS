@@ -382,6 +382,37 @@ function LoginPage() {
               {isLoading ? 'جاري تسجيل الدخول...' : isNavigating ? 'جاري الانتقال...' : 'تسجيل الدخول'}
             </Button>
 
+            {/* Forgot Password Link */}
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Link 
+                to="/forgot-password" 
+                style={{ 
+                  color: '#1976d2', 
+                  textDecoration: 'none',
+                  fontWeight: 500,
+                  fontSize: `${14 * scaleFactor}px`,
+                  transition: 'all 0.2s ease',
+                  display: 'inline-block',
+                  padding: '4px 8px',
+                  borderRadius: '8px',
+                  background: 'rgba(25, 118, 210, 0.05)',
+                  border: '1px solid rgba(25, 118, 210, 0.1)',
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = 'rgba(25, 118, 210, 0.1)';
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 2px 8px rgba(25, 118, 210, 0.15)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = 'rgba(25, 118, 210, 0.05)';
+                  e.target.style.transform = 'translateY(0px)';
+                  e.target.style.boxShadow = 'none';
+                }}
+              >
+                نسيت كلمة المرور؟
+              </Link>
+            </Box>
+
             {/* Sign Up Link */}
             <Fade in={true} timeout={1200}>
               <Box sx={{ textAlign: 'center', mt: 3 }}>
