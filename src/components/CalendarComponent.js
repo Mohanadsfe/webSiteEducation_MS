@@ -4,15 +4,43 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import dayjs from 'dayjs';
-import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';  // Ensure getDoc is imported
-import { db, auth } from '../firebaseConfig';
+import { collection, getDocs, doc, setDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
+import { db, auth } from '../services/FirebaseService';
 import { onAuthStateChanged } from 'firebase/auth';
+import NotificationService from '../services/NotificationService';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Button,
+  Box,
+  Typography,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
+} from '@mui/material';
 import './CalendarComponent.css';
 
 function CalendarComponent() {
   const [events, setEvents] = useState([]);
   const [userRole, setUserRole] = useState('');
   const [userEmail, setUserEmail] = useState('');
+  const [userName, setUserName] = useState('');
+  const [userPhone, setUserPhone] = useState('');
+  
+  // Booking dialog state
+  const [showBookingDialog, setShowBookingDialog] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [bookingForm, setBookingForm] = useState({
+    studentName: '',
+    studentEmail: '',
+    studentPhone: '',
+    time: '',
+    duration: '1'
+  });
 
   useEffect(() => {
     const fetchUserData = async (user) => {
@@ -23,6 +51,8 @@ function CalendarComponent() {
           const userData = userDoc.data();
           setUserRole(userData.role);
           setUserEmail(user.email);
+          setUserName(`${userData.firstName || ''} ${userData.lastName || ''}`.trim());
+          setUserPhone(userData.phoneNumber || '');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -57,41 +87,136 @@ function CalendarComponent() {
   }, [userRole]);
 
   const handleDateClick = async (info) => {
-    if (userRole === 'student') {
-      const selectedDate = dayjs(info.dateStr);
-      const currentDate = dayjs();
-      const limitDate = currentDate.add(7, 'day');
+    const selectedDate = dayjs(info.dateStr);
+    const currentDate = dayjs();
+    const limitDate = currentDate.add(7, 'day');
 
-      if (!selectedDate.isAfter(currentDate) || selectedDate.isAfter(limitDate)) {
-        alert('You can only choose dates between tomorrow and the next 7 days.');
-        return;
-      }
-
-      alert('You cannot book new appointments as a student.');
+    if (!selectedDate.isAfter(currentDate) || selectedDate.isAfter(limitDate)) {
+      alert('يمكنك فقط اختيار تواريخ بين غد والـ 7 أيام القادمة.');
       return;
     }
 
-    const studentName = prompt('Enter your name:');
-    if (!studentName) return;
+    // Check if slot is already booked
+    const existingAppointment = events.find(event => 
+      dayjs(event.date).format('YYYY-MM-DD') === info.dateStr
+    );
+    
+    if (existingAppointment) {
+      alert('هذا الموعد محجوز بالفعل.');
+      return;
+    }
 
-    const time = prompt('Enter the start time for your lecture (HH:MM format):');
-    if (!time) return;
+    // Set selected date and open booking dialog
+    setSelectedDate(info.dateStr);
+    setShowBookingDialog(true);
+  };
 
-    const duration = prompt('Enter the duration (1-3 hours):');
-    if (!duration) return;
+  // Generate a random Google Meet code
+  const generateMeetCode = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz';
+    let result = '';
+    for (let i = 0; i < 10; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  };
 
-    const uniqueId = `${info.dateStr}-${time}`;
+  // Handle form input changes
+  const handleFormChange = (field, value) => {
+    setBookingForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Handle booking confirmation
+  const handleConfirmBooking = async () => {
+    const { studentName, studentEmail, studentPhone, time, duration } = bookingForm;
+    
+    if (!studentName || !studentEmail || !studentPhone || !time || !duration) {
+      alert('يرجى ملء جميع الحقول المطلوبة.');
+      return;
+    }
+
+    // Generate Google Meet link
+    const meetLink = `https://meet.google.com/${generateMeetCode()}`;
+
+    const uniqueId = `${selectedDate}-${time}-${Date.now()}`;
     const newEvent = {
       id: uniqueId,
       studentName,
-      email: userEmail,
-      title: 'Lecture Appointment',
-      date: `${info.dateStr}T${time}:00`,
+      studentEmail,
+      studentPhone,
+      teacherEmail: 'mohanadsfe@gmail.com', // Always send to owner email
+      teacherName: 'مهند صفي', // Owner name
+      teacherPhone: '0548010225', // Owner phone
+      title: 'محاضرة تعليمية',
+      date: `${selectedDate}T${time}:00`,
       duration,
+      meetLink,
+      createdAt: new Date(),
+      bookedBy: userRole
     };
 
-    await setDoc(doc(db, 'appointments', uniqueId), newEvent);
-    setEvents([...events, newEvent]);
+    try {
+      // Save appointment to Firestore
+      await setDoc(doc(db, 'appointments', uniqueId), newEvent);
+      setEvents([...events, newEvent]);
+
+      // Send notifications to both student and teacher
+      await sendAppointmentNotifications(newEvent);
+
+      // Close dialog and reset form
+      setShowBookingDialog(false);
+      setBookingForm({
+        studentName: '',
+        studentEmail: '',
+        studentPhone: '',
+        time: '',
+        duration: '1'
+      });
+
+      alert('تم حجز الموعد بنجاح! تم إرسال تفاصيل الموعد لك وللمعلم.');
+    } catch (error) {
+      console.error('Error booking appointment:', error);
+      alert('حدث خطأ في حجز الموعد. حاول مرة أخرى.');
+    }
+  };
+
+  // Send notifications to both student and teacher
+  const sendAppointmentNotifications = async (appointment) => {
+    try {
+      // Send notification to student
+      await NotificationService.sendAppointmentConfirmation({
+        toEmail: appointment.studentEmail,
+        toName: appointment.studentName,
+        appointmentDate: dayjs(appointment.date).format('YYYY-MM-DD'),
+        appointmentTime: dayjs(appointment.date).format('HH:mm'),
+        duration: appointment.duration,
+        meetLink: appointment.meetLink,
+        teacherName: appointment.teacherName,
+        teacherEmail: appointment.teacherEmail,
+        teacherPhone: appointment.teacherPhone,
+        isStudent: true
+      });
+
+      // Send notification to teacher
+      await NotificationService.sendAppointmentConfirmation({
+        toEmail: appointment.teacherEmail,
+        toName: appointment.teacherName,
+        appointmentDate: dayjs(appointment.date).format('YYYY-MM-DD'),
+        appointmentTime: dayjs(appointment.date).format('HH:mm'),
+        duration: appointment.duration,
+        meetLink: appointment.meetLink,
+        studentName: appointment.studentName,
+        studentEmail: appointment.studentEmail,
+        studentPhone: appointment.studentPhone,
+        isStudent: false
+      });
+
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
   };
 
   const handleEventClick = async (info) => {
@@ -114,23 +239,107 @@ function CalendarComponent() {
   };
 
   return (
-    <FullCalendar
-      plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-      initialView="dayGridMonth"
-      events={events}
-      dateClick={handleDateClick}
-      eventClick={handleEventClick}
-      validRange={{
-        start: dayjs().add(1, 'day').format('YYYY-MM-DD'),  // Start from tomorrow
-        end: dayjs().add(7, 'day').format('YYYY-MM-DD'),     // Limit to 7 days from now
-      }}
-      headerToolbar={{
-        left: 'prev,next today',
-        center: 'title',
-        right: 'dayGridMonth,timeGridWeek,timeGridDay',
-      }}
-      height="auto"
-    />
+    <>
+      <FullCalendar
+        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+        initialView="dayGridMonth"
+        events={events}
+        dateClick={handleDateClick}
+        eventClick={handleEventClick}
+        validRange={{
+          start: dayjs().add(1, 'day').format('YYYY-MM-DD'),  // Start from tomorrow
+          end: dayjs().add(7, 'day').format('YYYY-MM-DD'),     // Limit to 7 days from now
+        }}
+        headerToolbar={{
+          left: 'prev,next today',
+          center: 'title',
+          right: 'dayGridMonth,timeGridWeek,timeGridDay',
+        }}
+        height="auto"
+      />
+
+      {/* Booking Dialog */}
+      <Dialog 
+        open={showBookingDialog} 
+        onClose={() => setShowBookingDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        dir="rtl"
+      >
+        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold' }}>
+          حجز موعد محاضرة
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Typography variant="body1" sx={{ textAlign: 'center', mb: 2 }}>
+              التاريخ المحدد: {dayjs(selectedDate).format('YYYY-MM-DD')}
+            </Typography>
+            
+            <TextField
+              label="الاسم الكامل"
+              value={bookingForm.studentName}
+              onChange={(e) => handleFormChange('studentName', e.target.value)}
+              fullWidth
+              required
+            />
+            
+            <TextField
+              label="البريد الإلكتروني"
+              type="email"
+              value={bookingForm.studentEmail}
+              onChange={(e) => handleFormChange('studentEmail', e.target.value)}
+              fullWidth
+              required
+            />
+            
+            <TextField
+              label="رقم الهاتف"
+              value={bookingForm.studentPhone}
+              onChange={(e) => handleFormChange('studentPhone', e.target.value)}
+              fullWidth
+              required
+            />
+            
+            <TextField
+              label="وقت بداية المحاضرة"
+              placeholder="HH:MM (مثال: 14:00)"
+              value={bookingForm.time}
+              onChange={(e) => handleFormChange('time', e.target.value)}
+              fullWidth
+              required
+            />
+            
+            <FormControl fullWidth required>
+              <InputLabel>مدة المحاضرة</InputLabel>
+              <Select
+                value={bookingForm.duration}
+                onChange={(e) => handleFormChange('duration', e.target.value)}
+                label="مدة المحاضرة"
+              >
+                <MenuItem value="1">ساعة واحدة</MenuItem>
+                <MenuItem value="2">ساعتان</MenuItem>
+                <MenuItem value="3">ثلاث ساعات</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'space-between', p: 2 }}>
+          <Button 
+            onClick={() => setShowBookingDialog(false)}
+            color="secondary"
+          >
+            إلغاء
+          </Button>
+          <Button 
+            onClick={handleConfirmBooking}
+            variant="contained"
+            color="primary"
+          >
+            تأكيد الحجز
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 

@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isTeacher() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+    function isEnrolled(courseId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/enrollments/$(request.auth.uid + "_" + courseId)).data.status == "active";
+    }
+
+    match /users/{uid} {
+      allow read:  if isTeacher() || (signedIn() && request.auth.uid == uid);
+      allow write: if isTeacher() || (signedIn() && request.auth.uid == uid);
+    }
+    
+    // Allow reading users collection for counting (needed for AboutUs page stats)
+    match /users/{document=**} {
+      allow read: if true; // Allow public read for counting users
+    }
+
+    match /courses/{courseId} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+
+      match /lessons/{lessonId} {
+        allow read: if isTeacher() || isEnrolled(courseId);
+        allow write: if isTeacher();
+      }
+    }
+
+    match /enrollments/{id} {
+      allow read: if isTeacher() || ( signedIn() && resource.data.studentId == request.auth.uid );
+      allow write: if isTeacher();
+    }
+
+    // Teacher approval requests
+    match /teacher_approvals/{id} {
+      // Teachers can read all approval requests (for admin management)
+      allow read: if isTeacher();
+      // Anyone can create approval requests (when signing up as teacher)
+      allow create: if signedIn();
+      // Only teachers can update approval status (approve/reject)
+      allow update: if isTeacher();
+      // Only teachers can delete approval requests
+      allow delete: if isTeacher();
+    }
+
+    // Packages (bundles catalog)
+    match /packages/{id} {
+      allow read: if true; // Public read
+      allow write: if isTeacher();
+    }
+
+    // Purchases (student plans)
+    match /purchases/{id} {
+      allow read: if isTeacher() || ( signedIn() && (resource.data.studentId == request.auth.uid || resource.data.studentEmail == request.auth.token.email));
+      allow write: if isTeacher();
+    }
+
+    // Appointments
+    match /appointments/{id} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+    }
+
+    // Opinions (testimonials)
+    match /opinions/{id} {
+      allow read: if true; // Public read
+      allow write: if signedIn();
+    }
+  }
+}
+
+

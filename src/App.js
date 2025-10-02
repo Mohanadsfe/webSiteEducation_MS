@@ -1,23 +1,52 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Navbar from './components/Navbar';
-import Home from './components/HomePage';
-import About from './components/AboutUs';
-import Contact from './components/ContactUs';
-import AddSubject from './components/AddSubject';
-import LoginPage from './components/LoginPage';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import Navbar from './components/common/Navbar';
+import Home from './pages/HomePage/HomePage';
+import About from './pages/About/AboutUs';
+import Contact from './pages/Contact/ContactUs';
+import LoginPage from './pages/Auth/LoginPage';
+import SignUpPage from './pages/Auth/SignUpPage';
+import BundlesPage from './pages/Bundles/BundlesPage';
+import TeacherDashboard from './components/common/TeacherDashboard';
+import StudentDashboard from './components/common/StudentDashboard';
+import CoursesPage from './pages/Courses/CoursesPage';
+import CourseDetail from './pages/Courses/CourseDetail';
+import TeacherApprovals from './pages/Admin/TeacherApprovals';
 
-function App() {
+function AppContent() {
+  const location = useLocation();
+  const hideNavbarRoutes = ['/login', '/signup'];
+  const shouldHideNavbar = hideNavbarRoutes.includes(location.pathname);
+
   return (
-    <Router>
-      <Navbar />
+    <>
+      {!shouldHideNavbar && <Navbar />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignUpPage />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/add-subject" element={<AddSubject />} />
+        <Route path="/bundles" element={<BundlesPage />} />
+        <Route path="/courses" element={<CoursesPage />} />
+        <Route path="/courses/:courseId" element={<CourseDetail />} />
+        <Route path="/teacher" element={<TeacherDashboard />} />
+        <Route path="/teacher-approvals" element={<TeacherApprovals />} />
+        <Route path="/me" element={<StudentDashboard />} />
       </Routes>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true
+      }}
+    >
+      <AppContent />
     </Router>
   );
 }
