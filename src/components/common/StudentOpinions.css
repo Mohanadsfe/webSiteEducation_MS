@@ -1,0 +1,43 @@
+.opinions-title {
+  margin-top: 3rem;
+  font-weight: bold;
+  color: #0d47a1;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.opinions-swiper {
+  padding: 1rem;
+}
+
+.opinion-box {
+  background-color: #ffffff;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.opinion-box:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.opinion-name {
+  color: #0d47a1;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.opinion-text {
+  color: #424242;
+}
+.carousel-slide {
+  min-width: 300px;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.carousel-slide-active {
+  opacity: 1;
+}

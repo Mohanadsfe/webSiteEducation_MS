@@ -1,0 +1,36 @@
+:root {
+  --ms-navy: #0b3d5c;
+  --ms-blue: #1a6bb5;
+  --ms-sky: #4aa3df;
+  --ms-teal: #1a9b8e;
+  --ms-gold: #e8a317;
+  --ms-coral: #c62828;
+  --ms-ink: #12263a;
+  --ms-muted: #5a6f82;
+  --ms-bg: #eef4f8;
+  --ms-surface: rgba(255, 255, 255, 0.92);
+  --ms-shadow: 0 18px 44px rgba(11, 61, 92, 0.12);
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--ms-bg);
+  color: var(--ms-ink);
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Soft page wash behind app content */
+#root {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(74, 163, 223, 0.22), transparent 55%),
+    radial-gradient(900px 420px at 90% 0%, rgba(26, 155, 142, 0.16), transparent 50%),
+    var(--ms-bg);
+}

@@ -1,0 +1,48 @@
+/* Style for calendar toolbar */
+.fc-toolbar {
+  background-color: #0d47a1;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 10px;
+  font-weight: bold;
+}
+
+/* Style for calendar events */
+.fc-daygrid-event {
+  background-color: #42a5f5 !important;
+  color: #ffffff !important;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-weight: bold;
+}
+
+.fc-daygrid-event:hover {
+  background-color: #1976d2 !important;
+  cursor: pointer;
+  transform: scale(1.05);
+  transition: all 0.2s ease-in-out;
+}
+
+/* Red color for student-only appointments */
+.fc-event-red {
+  background-color: #ef5350 !important;
+  color: #ffffff !important;
+}
+
+/* Style for day grid cells */
+.fc-daygrid-day {
+  border: 1px solid #e0e0e0;
+  background-color: #f3f4f6;
+  transition: background-color 0.3s ease;
+}
+
+.fc-daygrid-day:hover {
+  background-color: #e3f2fd;
+}
+
+/* Title style */
+.fc-toolbar-title {
+  font-size: 1.5rem;
+  text-transform: uppercase;
+}

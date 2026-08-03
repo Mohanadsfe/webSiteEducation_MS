@@ -1,0 +1,12 @@
+.bundles-page {
+  min-height: 100vh;
+  padding: 24px 0;
+  background:
+    radial-gradient(900px 420px at 10% -10%, rgba(26, 107, 181, 0.12), transparent 55%),
+    radial-gradient(800px 380px at 90% 0%, rgba(26, 155, 142, 0.1), transparent 50%),
+    #eef4f8;
+}
+
+.bundle-card {
+  background: linear-gradient(180deg, #ffffff, #f7fafc);
+}
