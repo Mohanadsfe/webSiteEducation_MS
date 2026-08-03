@@ -9,7 +9,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { db } from './FirebaseService';
+import { auth, db } from './FirebaseService';
 
 const COLLECTION = 'student_exams';
 
@@ -70,15 +70,22 @@ export class ExamsService {
     notes = '',
     imageUrl = '',
   }) {
+    const uid = auth.currentUser?.uid;
+    if (!uid) throw new Error('يجب تسجيل الدخول');
+    // Always use auth uid so Firestore rules (studentId == auth.uid) pass
+    const ownerId = uid;
+    if (studentId && studentId !== ownerId) {
+      console.warn('studentId prop ignored; using auth.uid for exam create');
+    }
+
     const name = (examName || '').trim();
-    if (!studentId) throw new Error('يجب تسجيل الدخول');
     if (!name) throw new Error('أدخل اسم الامتحان');
     const date = toDate(examDate);
     if (!date) throw new Error('أدخل تاريخ الامتحان');
 
     const ref = await addDoc(collection(db, COLLECTION), {
-      studentId,
-      studentEmail: studentEmail || '',
+      studentId: ownerId,
+      studentEmail: studentEmail || auth.currentUser?.email || '',
       studentName: studentName || '',
       examName: name,
       examDate: date,

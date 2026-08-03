@@ -97,13 +97,20 @@ service cloud.firestore {
       allow update, delete: if isTeacher() || (signedIn() && resource.data.userId == request.auth.uid);
     }
 
+    // Student exams — students manage their own; teachers see all
     match /student_exams/{id} {
-      allow read: if isTeacher() ||
-        (signedIn() && resource.data.studentId == request.auth.uid);
-      allow create: if signedIn() &&
-        request.resource.data.studentId == request.auth.uid;
-      allow update, delete: if isTeacher() ||
-        (signedIn() && resource.data.studentId == request.auth.uid);
+      allow read: if isTeacher()
+        || (signedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.examName is string
+        && request.resource.data.examName.size() > 0;
+      allow update: if isTeacher()
+        || (signedIn()
+            && resource.data.studentId == request.auth.uid
+            && request.resource.data.studentId == request.auth.uid);
+      allow delete: if isTeacher()
+        || (signedIn() && resource.data.studentId == request.auth.uid);
     }
   }
 }
