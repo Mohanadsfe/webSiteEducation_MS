@@ -19,7 +19,7 @@ import { contentTrackLabel } from '../../constants/tracks';
 export default function BundleTermsPage() {
   const { bundleId } = useParams();
   const navigate = useNavigate();
-  const { t, isHe } = useLanguage();
+  const { t } = useLanguage();
   const [bundle, setBundle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [agreed, setAgreed] = useState(false);
