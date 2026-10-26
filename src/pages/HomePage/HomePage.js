@@ -6,17 +6,15 @@ import {
   LinearProgress, IconButton, Paper
 } from '@mui/material';
 import { Instagram, Payment, EventAvailable } from '@mui/icons-material';
-import GoogleCalendar from '../../components/GoogleCalendar';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
-  doc, getDoc, collection, query, where, onSnapshot, getDocs, addDoc
+  doc, getDoc, collection, query, where, onSnapshot, getDocs
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
 import StudentResultsGallery from '../../components/common/StudentResultsGallery';
 import AboutTypography from '../../components/common/AboutTypography';
-import PaymentMethodDialog from '../../components/common/PaymentMethodDialog';
+import HourBookingScheduler from '../../components/common/HourBookingScheduler';
 import TrackChooser, { TrackBanner } from '../../components/common/TrackChooser';
 import LanguageToggle from '../../components/common/LanguageToggle';
 import useStudyTrack from '../../hooks/useStudyTrack';
@@ -31,9 +29,6 @@ function HomePage() {
   const [userId, setUserId] = useState('');
   const [userRole, setUserRole] = useState(''); // 'student' | 'teacher'
   const [studentProfile, setStudentProfile] = useState({ name: '', phone: '' });
-  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-  const [paymentItem, setPaymentItem] = useState(null);
-  const [bookingId, setBookingId] = useState(null);
 
   // Student bundle/purchases (live)
   const [purchases, setPurchases] = useState([]);
@@ -148,53 +143,6 @@ function HomePage() {
   const handleCalendarDoubleClick = () => setShowCalendar(false);
   // Hide opinions on double-click
   const handleInfoDoubleClick = () => setShowInfo(false);
-
-  /** After user picks a time in Google Calendar → open Visa / owner WhatsApp payment */
-  const handleAfterGooglePick = useCallback(async () => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const today = dayjs().format('YYYY-MM-DD');
-    const time = dayjs().format('HH:mm');
-
-    try {
-      const payload = {
-        studentId: user.uid,
-        studentEmail: user.email || '',
-        studentName: studentProfile.name || user.displayName || 'طالب',
-        studentPhone: studentProfile.phone || '',
-        teacherEmail: 'mohanadsfe@gmail.com',
-        teacherName: 'مهند صفي',
-        teacherPhone: '0548010225',
-        title: t('حجز موعد من Google Calendar', 'הזמנה מיומן Google'),
-        date: `${today}T${time}:00`,
-        duration: 1,
-        hours: 1,
-        status: 'pending_owner',
-        paymentMethod: '',
-        paymentStatus: 'awaiting',
-        source: 'google_calendar',
-        createdAt: new Date(),
-        bookedBy: 'student',
-      };
-      const ref = await addDoc(collection(db, 'appointments'), payload);
-      setBookingId(ref.id);
-      setPaymentItem({
-        title: payload.title,
-        category: 'tutoring',
-        bookingId: ref.id,
-      });
-      setShowPaymentDialog(true);
-    } catch (e) {
-      console.error(e);
-      // Still open payment even if Firestore create fails
-      setPaymentItem({
-        title: t('حجز موعد / ساعة دراسية', 'הזמנת תור / שעת לימוד'),
-        category: 'tutoring',
-      });
-      setShowPaymentDialog(true);
-    }
-  }, [studentProfile.name, studentProfile.phone, t]);
 
   // ---------- NORMALIZATION HELPERS (fix mixed field names / types) ----------
   const toNum = (v) => {
@@ -771,8 +719,8 @@ function HomePage() {
                 <Box sx={{ flex: 1 }}>
                   <Typography sx={{ fontWeight: 900, fontSize: { xs: '1.1rem', sm: '1.3rem' }, lineHeight: 1.45 }}>
                     {t(
-                      'اختر الموعد في Google ثم ارجع للصفحة — تُفتح صفحة الدفع (Visa أو واتساب المالك).',
-                      'בחרו תור ב־Google וחזרו לעמוד — ייפתח דף התשלום (Visa או וואטסאפ הבעלים).'
+                      'اختر يوماً وساعة متاحة من الجدول (المحجوز لا يظهر) — بياناتك من حسابك ثم ادفع Visa أو واتساب.',
+                      'בחרו יום ושעה פנויה מהלוח (תפוס לא מוצג) — הפרטים מהחשבון ואז Visa או וואטסאפ.'
                     )}
                   </Typography>
                   <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
@@ -814,11 +762,9 @@ function HomePage() {
               </Stack>
             </Paper>
 
-            {showCalendar && (
-              <GoogleCalendar onAfterPickTime={handleAfterGooglePick} />
-            )}
+            {showCalendar && <HourBookingScheduler />}
             <Typography variant="caption" sx={{ display: 'block', mt: 1, textAlign: 'left', opacity: 0.7 }}>
-              ✨ انقر نقراً مزدوجاً لإخفاء التقويم
+              ✨ انقر نقراً مزدوجاً لإخفاء الجدول
             </Typography>
           </Box>
         </Collapse>
@@ -839,14 +785,6 @@ function HomePage() {
             </Typography>
           </Box>
         </Collapse>
-
-        <PaymentMethodDialog
-          open={showPaymentDialog}
-          onClose={() => setShowPaymentDialog(false)}
-          item={paymentItem}
-          bookingId={bookingId}
-          requireOwnerContactForNonVisa
-        />
 
       </Container>
     </div>

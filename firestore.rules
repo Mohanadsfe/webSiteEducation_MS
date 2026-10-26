@@ -40,17 +40,20 @@ service cloud.firestore {
 
     match /courses/{courseId} {
       allow read: if signedIn();
-      allow write: if isTeacher();
+      // Only platform owners may create/update/delete courses
+      allow write: if isOwnerEmail();
 
+      // Signed-in users can list lessons (UI: first video free; rest need personal course code).
       match /lessons/{lessonId} {
-        allow read: if isTeacher() || isEnrolled(courseId);
-        allow write: if isTeacher();
+        allow read: if signedIn();
+        allow write: if isOwnerEmail();
       }
     }
 
     match /enrollments/{id} {
       allow read: if isTeacher() || (signedIn() && resource.data.studentId == request.auth.uid);
-      allow write: if isTeacher();
+      // Only owners grant / revoke access codes
+      allow write: if isOwnerEmail();
     }
 
     match /teacher_approvals/{id} {
@@ -66,7 +69,7 @@ service cloud.firestore {
 
     match /site_settings/{id} {
       allow read: if true;
-      allow write: if isTeacher();
+      allow write: if isTeacher() || isOwnerEmail();
     }
 
     match /purchases/{id} {
@@ -80,15 +83,32 @@ service cloud.firestore {
 
     match /appointments/{id} {
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.studentId == request.auth.uid
-        && request.resource.data.status == 'pending_owner';
-      allow update: if isTeacher()
+      // Student books self as confirmed immediately; owner/teacher may create any booking
+      allow create: if isTeacher() || isOwnerEmail()
+        || (signedIn()
+            && request.resource.data.studentId == request.auth.uid
+            && request.resource.data.status == 'confirmed');
+      allow update: if isTeacher() || isOwnerEmail()
+        // Student may update payment fields / reminders on own booking (cannot change status or identity)
         || (signedIn()
             && resource.data.studentId == request.auth.uid
-            && resource.data.status == 'pending_owner'
-            && request.resource.data.status == 'pending_owner');
-      allow delete: if isTeacher();
+            && request.resource.data.studentId == resource.data.studentId
+            && request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['paymentMethod', 'paymentStatus', 'updatedAt',
+                          'reminderDayBeforeSent', 'reminderDayBeforeSentAt',
+                          'reminderMorningSent', 'reminderMorningSentAt',
+                          'reminderHours5Sent', 'reminderHours5SentAt']));
+      // Only owner/teacher may delete active bookings (frees the hour on the schedule).
+      // Signed-in users may purge past 90-day retention only.
+      allow delete: if isTeacher()
+        || isOwnerEmail()
+        || (signedIn()
+            && resource.data.expiresAt != null
+            && request.time >= resource.data.expiresAt)
+        || (signedIn()
+            && resource.data.createdAt != null
+            && request.time >= resource.data.createdAt + duration.value(90, 'd'));
     }
 
     match /opinions/{id} {

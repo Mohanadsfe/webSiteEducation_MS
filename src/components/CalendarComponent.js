@@ -44,6 +44,7 @@ function CalendarComponent() {
   });
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [paymentItem, setPaymentItem] = useState(null);
+  const [bookingId, setBookingId] = useState(null);
 
   useEffect(() => {
     const fetchUserData = async (user) => {
@@ -140,10 +141,33 @@ function CalendarComponent() {
 
   // Handle booking confirmation → then ask how to pay
   const handleConfirmBooking = async () => {
-    const { studentName, studentEmail, studentPhone, time, duration } = bookingForm;
-    
-    if (!studentName || !studentEmail || !studentPhone || !time || !duration) {
-      alert('يرجى ملء جميع الحقول المطلوبة.');
+    const { time, duration } = bookingForm;
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      alert('يجب تسجيل الدخول');
+      return;
+    }
+    if (!time || !duration) {
+      alert('اختر الوقت ومدة الدرس.');
+      return;
+    }
+
+    // Fresh student profile from Firestore (never owner data)
+    let studentName = bookingForm.studentName || userName;
+    let studentEmailAddr = bookingForm.studentEmail || userEmail;
+    let studentPhone = bookingForm.studentPhone || userPhone || '';
+    try {
+      const { resolveStudentBookingIdentity } = await import('../utils/studentIdentity');
+      const idn = await resolveStudentBookingIdentity(uid);
+      studentName = idn.studentName || studentName;
+      studentEmailAddr = idn.studentEmail || studentEmailAddr;
+      studentPhone = idn.studentPhone || studentPhone;
+    } catch {
+      /* keep form values */
+    }
+
+    if (!studentName || !studentEmailAddr) {
+      alert('بيانات الحساب ناقصة. أكمل الاسم والبريد في ملفك ثم احجز.');
       return;
     }
 
@@ -154,8 +178,9 @@ function CalendarComponent() {
     const hours = Number(duration) || 1;
     const newEvent = {
       id: uniqueId,
+      studentId: uid,
       studentName,
-      studentEmail,
+      studentEmail: studentEmailAddr,
       studentPhone,
       teacherEmail: 'mohanadsfe@gmail.com', // Always send to owner email
       teacherName: 'مهند صفي', // Owner name
@@ -166,7 +191,9 @@ function CalendarComponent() {
       meetLink,
       createdAt: new Date(),
       bookedBy: userRole,
-      status: 'pending_payment',
+      status: 'confirmed',
+      paymentStatus: 'awaiting',
+      confirmedAt: new Date(),
     };
 
     try {
@@ -187,10 +214,15 @@ function CalendarComponent() {
         duration: '1'
       });
 
+      setBookingId(uniqueId);
       setPaymentItem({
         title: `حجز موعد — ${selectedDate} ${time}`,
         hours,
         category: 'tutoring',
+        bookingId: uniqueId,
+        studentName,
+        studentEmail: studentEmailAddr,
+        studentPhone,
       });
       setShowPaymentDialog(true);
     } catch (error) {
@@ -291,34 +323,28 @@ function CalendarComponent() {
               التاريخ المحدد: {dayjs(selectedDate).format('YYYY-MM-DD')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mb: 1 }}>
-              بعد تأكيد الموعد سيُطلب منك اختيار طريقة الدفع (Visa / Bit / أخرى)
+              بياناتك من الحساب تُستخدم تلقائياً — اختر الوقت فقط، ثم الدفع
             </Typography>
-            
+
             <TextField
-              label="الاسم الكامل"
+              label="الاسم (من حسابك)"
               value={bookingForm.studentName}
-              onChange={(e) => handleFormChange('studentName', e.target.value)}
               fullWidth
-              required
+              InputProps={{ readOnly: true }}
             />
-            
             <TextField
-              label="البريد الإلكتروني"
-              type="email"
+              label="البريد (من حسابك)"
               value={bookingForm.studentEmail}
-              onChange={(e) => handleFormChange('studentEmail', e.target.value)}
               fullWidth
-              required
+              InputProps={{ readOnly: true }}
             />
-            
             <TextField
-              label="رقم الهاتف"
-              value={bookingForm.studentPhone}
-              onChange={(e) => handleFormChange('studentPhone', e.target.value)}
+              label="الهاتف (من حسابك)"
+              value={bookingForm.studentPhone || '—'}
               fullWidth
-              required
+              InputProps={{ readOnly: true }}
             />
-            
+
             <TextField
               label="وقت بداية المحاضرة"
               placeholder="HH:MM (مثال: 14:00)"
@@ -327,7 +353,7 @@ function CalendarComponent() {
               fullWidth
               required
             />
-            
+
             <FormControl fullWidth required>
               <InputLabel>مدة المحاضرة</InputLabel>
               <Select
@@ -364,8 +390,10 @@ function CalendarComponent() {
         onClose={() => {
           setShowPaymentDialog(false);
           setPaymentItem(null);
+          setBookingId(null);
         }}
         item={paymentItem}
+        bookingId={bookingId}
       />
     </>
   );

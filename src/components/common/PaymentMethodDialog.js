@@ -90,12 +90,21 @@ export default function PaymentMethodDialog({
   }, [open]);
 
   const context = buildPurchaseContextMessage(item);
-  const userEmail = auth.currentUser?.email || '';
-  const userName = auth.currentUser?.displayName || 'طالب / תלמיד';
+  // Student identity only — never substitute owner/teacher contact as the student
+  const userEmail = item?.studentEmail || auth.currentUser?.email || '';
+  const userName =
+    item?.studentName || auth.currentUser?.displayName || 'طالب / תלמיד';
+  const userPhone = (item?.studentPhone || '').trim();
   const talkOwner = method === 'owner';
 
   const openWhatsApp = (message) => {
     window.open(buildWhatsAppUrl(message), '_blank', 'noopener,noreferrer');
+  };
+
+  const studentLines = () => {
+    const lines = [`👤 الطالب / התלמיד: ${userName}`, `📧 ${userEmail || '—'}`];
+    if (userPhone) lines.push(`📱 هاتف الطالب: ${userPhone}`);
+    return lines.join('\n');
   };
 
   const markPaymentChosen = async (paymentMethod) => {
@@ -104,7 +113,6 @@ export default function PaymentMethodDialog({
       await updateDoc(doc(db, 'appointments', bookingId), {
         paymentMethod,
         paymentStatus: 'awaiting_owner',
-        status: 'pending_owner',
         updatedAt: new Date(),
       });
     } catch (e) {
@@ -124,8 +132,7 @@ export default function PaymentMethodDialog({
 أريد الدفع ببطاقة Visa / כרטיס אשראי עבור:
 ${context || 'طلب شراء / בקשת רכישה'}
 
-👤 ${userName}
-📧 ${userEmail}
+${studentLines()}
 
 أرجو إرسال رابط دفع آمن.
 נא לשלוח לי קישור תשלום מאובטח.
@@ -143,9 +150,9 @@ ${context || 'طلب شراء / בקשת רכישה'}
 
 ${context || 'طلب حجز / בקשת הזמנה'}
 
-👤 ${userName}
-📧 ${userEmail}
-📱 ${OWNER_PHONE_DISPLAY}
+${studentLines()}
+
+(رسالة للطالب → واتساب المالك ${OWNER_PHONE_DISPLAY})
 
 شكراً / תודה 🙏`);
     onClose?.();

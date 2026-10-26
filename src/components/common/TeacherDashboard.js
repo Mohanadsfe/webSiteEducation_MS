@@ -5,7 +5,7 @@ import {
   IconButton, Button, Chip, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Stack, MenuItem, Divider, CircularProgress, Alert
 } from '@mui/material';
-import { Edit, CheckCircle, Cancel, Delete } from '@mui/icons-material';
+import { Edit, CheckCircle, Delete } from '@mui/icons-material';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -444,7 +444,7 @@ export default function TeacherDashboard() {
         {tab === 1 && (
           <Box sx={{ mt: 2, overflowX: 'auto' }}>
             <Alert severity="info" sx={{ mb: 2, textAlign: 'right', direction: 'rtl' }}>
-              طلبات بانتظارك تظهر كـ «بانتظار المالك». وافق بعد التأكد من الدفع عبر واتساب — عندها يُثبَّت الحجز.
+              الحجوزات تُقبل فوراً عند الطالب. احذف أي موعد لإعادة الساعة متاحة في الجدول.
             </Alert>
             <Table size="small">
               <TableHead>
@@ -461,16 +461,13 @@ export default function TeacherDashboard() {
                 {scheduledAppts.map(a => {
                   const u = usersById.get(a.studentId) || {};
                   const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || a.studentName || a.studentId;
-                  const pending = a.status === 'pending_owner';
                   const statusLabel =
-                    a.status === 'pending_owner' ? 'بانتظار المالك' :
-                    a.status === 'confirmed' ? 'مؤكّد' :
                     a.status === 'completed' ? 'مكتمل' :
                     a.status === 'cancelled' ? 'ملغى' :
                     a.status === 'rejected' ? 'مرفوض' :
-                    (a.status || 'scheduled');
+                    'مؤكّد';
                   return (
-                    <TableRow key={a.id} hover sx={pending ? { bgcolor: 'rgba(255, 193, 7, 0.12)' } : undefined}>
+                    <TableRow key={a.id} hover>
                       <TableCell align="right">{name}</TableCell>
                       <TableCell align="right">{formatDate(a.date)}</TableCell>
                       <TableCell align="center">{a.duration || a.hours || 1}</TableCell>
@@ -485,45 +482,18 @@ export default function TeacherDashboard() {
                         <Chip
                           label={statusLabel}
                           color={
-                            a.status === 'completed' || a.status === 'confirmed' ? 'success' :
-                            a.status === 'pending_owner' ? 'warning' :
-                            a.status === 'cancelled' || a.status === 'rejected' ? 'default' : 'primary'
+                            a.status === 'cancelled' || a.status === 'rejected' ? 'default' :
+                            a.status === 'completed' ? 'primary' : 'success'
                           }
                           size="small"
                         />
                       </TableCell>
                       <TableCell align="center">
                         <Stack direction="row" spacing={1} justifyContent="center">
-                          {pending && (
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="success"
-                              onClick={() => setApptStatus(a.id, 'confirmed')}
-                              sx={{ fontWeight: 800 }}
-                            >
-                              موافقة وتثبيت
-                            </Button>
-                          )}
-                          {pending && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="warning"
-                              onClick={() => setApptStatus(a.id, 'rejected')}
-                            >
-                              رفض
-                            </Button>
-                          )}
-                          {!pending && (
-                            <IconButton size="small" color="success" title="وضع مكتمل" onClick={() => setApptStatus(a.id, 'completed')}>
-                              <CheckCircle />
-                            </IconButton>
-                          )}
-                          <IconButton size="small" color="default" title="إلغاء (يبقى في السجل)" onClick={() => setApptStatus(a.id, 'cancelled')}>
-                            <Cancel />
+                          <IconButton size="small" color="success" title="وضع مكتمل" onClick={() => setApptStatus(a.id, 'completed')}>
+                            <CheckCircle />
                           </IconButton>
-                          <IconButton size="small" color="error" title="حذف نهائي" onClick={() => deleteAppt(a.id)}>
+                          <IconButton size="small" color="error" title="حذف — تعود الساعة للجدول" onClick={() => deleteAppt(a.id)}>
                             <Delete />
                           </IconButton>
                         </Stack>

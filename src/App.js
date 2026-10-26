@@ -16,8 +16,11 @@ import CoursesPage from './pages/Courses/CoursesPage';
 import CourseDetail from './pages/Courses/CourseDetail';
 import LessonManagePage from './pages/Courses/LessonManagePage';
 import EnrollmentManagePage from './pages/Courses/EnrollmentManagePage';
+import MyBookingsPage from './pages/Bookings/MyBookingsPage';
+import BookingManagePage from './pages/Bookings/BookingManagePage';
 import TeacherApprovals from './pages/Admin/TeacherApprovals';
 import ExamReminder from './components/common/ExamReminder';
+import BookingReminder from './components/common/BookingReminder';
 import { LanguageProvider } from './context/LanguageContext';
 import theme from './theme';
 
@@ -30,6 +33,7 @@ function AppContent() {
     <>
       {!shouldHideNavbar && <Navbar />}
       {!shouldHideNavbar && <ExamReminder />}
+      {!shouldHideNavbar && <BookingReminder />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />
@@ -46,6 +50,8 @@ function AppContent() {
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/teacher-approvals" element={<TeacherApprovals />} />
         <Route path="/me" element={<StudentDashboard />} />
+        <Route path="/my-bookings" element={<MyBookingsPage />} />
+        <Route path="/booking-manage" element={<BookingManagePage />} />
       </Routes>
     </>
   );

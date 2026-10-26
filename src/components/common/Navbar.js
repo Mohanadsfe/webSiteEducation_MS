@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { AppBar, Toolbar, Typography, Button, Box, Tooltip, Badge, keyframes } from '@mui/material';
-import { MenuBook, EventNote } from '@mui/icons-material';
-import { Link, useNavigate } from 'react-router-dom';
+import { AppBar, Toolbar, Typography, Button, Box, Tooltip, Badge, Chip, keyframes } from '@mui/material';
+import { MenuBook, EventNote, AutoAwesome } from '@mui/icons-material';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import StudentExamsDialog from './StudentExamsDialog';
 import ExamsService from '../../services/ExamsService';
+import WhatsNewService, { getSeenAt } from '../../services/WhatsNewService';
 import { useLanguage } from '../../context/LanguageContext';
 import LanguageToggle from './LanguageToggle';
+import { isOwnerAdminEmail } from '../../constants/admin';
+import MsEducationIcon from './MsEducationIcon';
 
 const softPulse = keyframes`
   0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,0.18), 0 0 0 0 rgba(255,255,255,0.45); }
@@ -23,8 +26,20 @@ function Navbar() {
   const [userEmail, setUserEmail] = useState('');
   const [upcomingExams, setUpcomingExams] = useState(0);
   const [examsOpen, setExamsOpen] = useState(false);
+  const [courseUpdatesCount, setCourseUpdatesCount] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLanguage();
+
+  const refreshCourseUpdatesBadge = async () => {
+    try {
+      const feed = await WhatsNewService.getFeed();
+      const n = WhatsNewService.countUnseenFeed(feed, getSeenAt());
+      setCourseUpdatesCount(n);
+    } catch {
+      setCourseUpdatesCount(0);
+    }
+  };
 
   useEffect(() => {
     let unsubExams = () => {};
@@ -58,6 +73,7 @@ function Navbar() {
           setRole('');
           setUpcomingExams(0);
         }
+        refreshCourseUpdatesBadge();
       } else {
         setIsLoggedIn(false);
         setUserName('');
@@ -65,6 +81,7 @@ function Navbar() {
         setUserId('');
         setUserEmail('');
         setUpcomingExams(0);
+        refreshCourseUpdatesBadge();
       }
     });
     return () => {
@@ -72,6 +89,11 @@ function Navbar() {
       unsubExams();
     };
   }, []);
+
+  // Refresh badge when leaving /courses (after updates were marked seen)
+  useEffect(() => {
+    refreshCourseUpdatesBadge();
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {
@@ -110,6 +132,29 @@ function Navbar() {
         >
           {/* Right side (RTL): exams circle + nav links */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              component={Link}
+              to="/"
+              aria-label="MS Education"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                textDecoration: 'none',
+                color: '#fff',
+                flexShrink: 0,
+              }}
+            >
+              <MsEducationIcon size={42} />
+              <Box sx={{ lineHeight: 1.05, textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
+                <Typography sx={{ fontWeight: 900, fontSize: '0.95rem', color: '#fff' }}>
+                  MS Education
+                </Typography>
+                <Typography sx={{ fontWeight: 700, fontSize: '0.72rem', color: 'rgba(255,255,255,0.88)' }}>
+                  معهد المعرفة
+                </Typography>
+              </Box>
+            </Box>
             {/* Student exams data button — clear label + circle icon */}
             {isLoggedIn && role === 'student' && (
               <Tooltip
@@ -199,14 +244,70 @@ function Navbar() {
               {t('الرزمات', 'חבילות')}
             </Button>
 
-            <Button
-              color="inherit"
-              component={Link}
-              to="/courses"
-              sx={{ px: 2.25, bgcolor: 'rgba(255,255,255,0.22)', '&:hover': { bgcolor: 'rgba(255,255,255,0.30)' } }}
+            <Badge
+              color="error"
+              badgeContent={
+                courseUpdatesCount > 0
+                  ? (courseUpdatesCount > 9 ? '9+' : courseUpdatesCount)
+                  : 0
+              }
+              overlap="circular"
+              sx={{
+                '& .MuiBadge-badge': {
+                  fontWeight: 900,
+                  fontSize: '0.65rem',
+                  minWidth: 18,
+                  height: 18,
+                  top: 4,
+                  insetInlineEnd: 2,
+                },
+              }}
             >
-              {t('الدورات', 'קורסים')}
-            </Button>
+              <Button
+                color="inherit"
+                component={Link}
+                to="/courses"
+                sx={{
+                  px: courseUpdatesCount > 0 ? 1.5 : 2.25,
+                  py: 0.75,
+                  gap: 0.75,
+                  bgcolor: courseUpdatesCount > 0
+                    ? 'rgba(255, 193, 7, 0.42)'
+                    : 'rgba(255,255,255,0.22)',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.30)' },
+                  fontWeight: 900,
+                  animation: courseUpdatesCount > 0 ? `${softPulse} 2.2s ease-in-out infinite` : 'none',
+                }}
+              >
+                {t('الدورات', 'קורסים')}
+                {courseUpdatesCount > 0 && (
+                  <Chip
+                    size="small"
+                    icon={<AutoAwesome sx={{ fontSize: '14px !important', color: '#fff !important' }} />}
+                    label={t('جديد', 'חדש')}
+                    sx={{
+                      height: 22,
+                      fontWeight: 900,
+                      fontSize: '0.72rem',
+                      bgcolor: '#c62828',
+                      color: '#fff',
+                      '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
+                    }}
+                  />
+                )}
+              </Button>
+            </Badge>
+
+            {isLoggedIn && (
+              <Button
+                color="inherit"
+                component={Link}
+                to="/my-bookings"
+                sx={{ px: 2, bgcolor: 'rgba(255,255,255,0.14)', '&:hover': { bgcolor: 'rgba(255,255,255,0.22)' }, fontWeight: 800 }}
+              >
+                {t('مواعيدي', 'התורים שלי')}
+              </Button>
+            )}
 
             <Button
               color="inherit"
@@ -242,13 +343,20 @@ function Navbar() {
               </Button>
             )}
 
-            {isLoggedIn && role === 'teacher' && (
+            {isLoggedIn && (role === 'teacher' || isOwnerAdminEmail(userEmail)) && (
               <>
-                <Button color="inherit" component={Link} to="/teacher-approvals" sx={{ fontWeight: 800 }}>
-                  {t('طلبات المعلمين', 'בקשות מורים')}
-                </Button>
-                <Button color="inherit" component={Link} to="/teacher" sx={{ fontWeight: 800 }}>
-                  {t('لوحة المدرّس', 'לוח מורה')}
+                {role === 'teacher' && (
+                  <>
+                    <Button color="inherit" component={Link} to="/teacher-approvals" sx={{ fontWeight: 800 }}>
+                      {t('طلبات المعلمين', 'בקשות מורים')}
+                    </Button>
+                    <Button color="inherit" component={Link} to="/teacher" sx={{ fontWeight: 800 }}>
+                      {t('لوحة المدرّس', 'לוח מורה')}
+                    </Button>
+                  </>
+                )}
+                <Button color="inherit" component={Link} to="/booking-manage" sx={{ fontWeight: 800 }}>
+                  {t('إدارة الحجوزات', 'ניהול הזמנות')}
                 </Button>
               </>
             )}

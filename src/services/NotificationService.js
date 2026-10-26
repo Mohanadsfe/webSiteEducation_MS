@@ -1,26 +1,290 @@
 import emailjs from 'emailjs-com';
+import { OWNER_ADMIN_EMAILS } from '../constants/admin';
 
 export class NotificationService {
-  // EmailJS configuration - Update these with your actual EmailJS credentials
-  static EMAILJS_SERVICE_ID = 'service_placeholder'; // Replace with your EmailJS service ID
-  static EMAILJS_TEMPLATE_ID = 'template_placeholder'; // Replace with your EmailJS template ID
-  static EMAILJS_USER_ID = 'user_placeholder'; // Replace with your EmailJS user ID
+  // Prefer env vars; fall back to placeholders until configured
+  static get EMAILJS_SERVICE_ID() {
+    return process.env.REACT_APP_EMAILJS_SERVICE_ID || 'service_placeholder';
+  }
+  static get EMAILJS_TEMPLATE_ID() {
+    return process.env.REACT_APP_EMAILJS_TEMPLATE_ID || 'template_placeholder';
+  }
+  static get EMAILJS_USER_ID() {
+    return process.env.REACT_APP_EMAILJS_PUBLIC_KEY
+      || process.env.REACT_APP_EMAILJS_USER_ID
+      || 'user_placeholder';
+  }
+
+  static get isEmailJsConfigured() {
+    return (
+      this.EMAILJS_SERVICE_ID !== 'service_placeholder'
+      && this.EMAILJS_TEMPLATE_ID !== 'template_placeholder'
+      && this.EMAILJS_USER_ID !== 'user_placeholder'
+    );
+  }
+
+  /** Owner Gmail inboxes that receive new booking alerts */
+  static OWNER_NOTIFY_EMAILS = [...OWNER_ADMIN_EMAILS];
 
   // WhatsApp configuration
   static WHATSAPP_NUMBER = '+972548010225'; // Your WhatsApp number
+
+  static buildBookingEmailBody(booking = {}) {
+    const lines = [
+      'حجز ساعة دراسية جديد / New tutoring booking',
+      '',
+      `👤 الطالب / Student: ${booking.studentName || '—'}`,
+      `📧 البريد / Email: ${booking.studentEmail || '—'}`,
+      `📱 الهاتف / Phone: ${booking.studentPhone || '—'}`,
+      '',
+      `📅 التاريخ والوقت / Date & time: ${booking.date || '—'}`,
+      `⏰ المدة / Duration: ${booking.duration || booking.hours || 1} ساعة / hours`,
+      `📌 الحالة / Status: ${booking.status || 'confirmed'} (مؤكد تلقائياً / auto-confirmed)`,
+      `🆔 رقم الحجز / Booking id: ${booking.id || '—'}`,
+      '',
+      'الحجز مؤكد فوراً. يمكنك حذفه من إدارة الحجوزات لإعادة الساعة للجدول.',
+      'Booking is confirmed immediately. Delete it in Booking Manage to free the hour on the schedule.',
+    ];
+    return lines.join('\n');
+  }
+
+  /**
+   * Notify owner Gmail(s) when a student books an hour.
+   * Tries EmailJS first (if configured), then FormSubmit → owner Gmail.
+   */
+  /** Notify student that the owner booked a specific hour for them */
+  static async notifyStudentOwnerAssignedBooking(booking) {
+    const toEmail = (booking.studentEmail || '').trim();
+    const subject = `تم حجز محاضرة لك — ${booking.date || ''}`;
+    const message = [
+      'مرحباً،',
+      '',
+      'قام المعلّم بحجز محاضرة خاصة لك في الموقع.',
+      '',
+      `👤 ${booking.studentName || 'طالب'}`,
+      `📅 الموعد: ${booking.date || '—'}`,
+      `⏰ المدة: ${booking.duration || booking.hours || 1} ساعة`,
+      booking.note ? `📝 ملاحظة: ${booking.note}` : '',
+      '',
+      'راجع صفحة «مواعيدي» في الموقع.',
+      '',
+      'سياسة الإلغاء: للإلغاء يُرجى ذلك قبل ٢٤ ساعة من الموعد، وإلا يبقى الحجز محتسباً.',
+      '',
+      'معهد المعرفة',
+    ].filter(Boolean).join('\n');
+
+    const results = { emailjs: null, formSubmit: null, success: false };
+    if (!toEmail || !toEmail.includes('@')) return results;
+
+    if (this.isEmailJsConfigured) {
+      try {
+        await emailjs.send(
+          this.EMAILJS_SERVICE_ID,
+          this.EMAILJS_TEMPLATE_ID,
+          {
+            to_email: toEmail,
+            to_name: booking.studentName || 'Student',
+            subject,
+            message,
+            appointment_date: booking.date || '',
+            from_name: 'معهد المعرفة / MS Education',
+            reply_to: 'mohanadsfe@gmail.com',
+          },
+          this.EMAILJS_USER_ID
+        );
+        results.emailjs = { success: true };
+        results.success = true;
+      } catch (e) {
+        console.error('EmailJS assigned booking failed', e);
+      }
+    }
+
+    try {
+      const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(toEmail)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          _subject: subject,
+          name: 'معهد المعرفة',
+          email: 'mohanadsfe@gmail.com',
+          message,
+          _template: 'table',
+        }),
+      });
+      results.formSubmit = { success: res.ok };
+      if (res.ok) results.success = true;
+    } catch (e) {
+      console.error('FormSubmit assigned booking failed', e);
+    }
+    return results;
+  }
+
+  static async notifyOwnerOfBooking(booking) {
+    const subject = `حجز جديد — ${booking.studentName || 'طالب'} — ${booking.date || ''}`;
+    const message = this.buildBookingEmailBody(booking);
+    const results = { emailjs: null, formSubmit: [], success: false };
+
+    if (this.isEmailJsConfigured) {
+      try {
+        for (const ownerEmail of this.OWNER_NOTIFY_EMAILS) {
+          await emailjs.send(
+            this.EMAILJS_SERVICE_ID,
+            this.EMAILJS_TEMPLATE_ID,
+            {
+              to_email: ownerEmail,
+              to_name: 'Owner',
+              subject,
+              message,
+              student_name: booking.studentName || '',
+              student_email: booking.studentEmail || '',
+              student_phone: booking.studentPhone || '',
+              appointment_date: booking.date || '',
+              duration: booking.duration || booking.hours || 1,
+              booking_id: booking.id || '',
+              from_name: 'معهد المعرفة / MS Education',
+              reply_to: booking.studentEmail || 'mohanadsfe@gmail.com',
+            },
+            this.EMAILJS_USER_ID
+          );
+        }
+        results.emailjs = { success: true };
+        results.success = true;
+      } catch (e) {
+        console.error('EmailJS owner booking notify failed', e);
+        results.emailjs = { success: false, message: e.message };
+      }
+    }
+
+    // Reliable Gmail delivery without EmailJS keys (first use: confirm the FormSubmit email)
+    for (const ownerEmail of this.OWNER_NOTIFY_EMAILS) {
+      try {
+        const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(ownerEmail)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            _subject: subject,
+            name: booking.studentName || 'Student',
+            email: booking.studentEmail || 'noreply@ms-education.local',
+            phone: booking.studentPhone || '',
+            date: booking.date || '',
+            duration: booking.duration || booking.hours || 1,
+            booking_id: booking.id || '',
+            message,
+            _template: 'table',
+          }),
+        });
+        const ok = res.ok;
+        results.formSubmit.push({ email: ownerEmail, success: ok });
+        if (ok) results.success = true;
+      } catch (e) {
+        console.error('FormSubmit owner booking notify failed', ownerEmail, e);
+        results.formSubmit.push({ email: ownerEmail, success: false, message: e.message });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Email the student a lecture reminder.
+   * kind: 'day_before' | 'hours3' | 'hours5' (legacy) | 'morning' (legacy)
+   */
+  static async notifyStudentBookingReminder(booking, kind = 'day_before') {
+    const toEmail = (booking.studentEmail || '').trim();
+    if (!toEmail || !toEmail.includes('@')) {
+      return { success: false, message: 'no student email' };
+    }
+
+    const sameDay = kind === 'hours3' || kind === 'hours5' || kind === 'morning';
+    const when = sameDay
+      ? 'تذكير: محاضرتك اليوم بعد حوالي ٣ ساعات / Reminder: your lecture is in about 3 hours'
+      : 'تذكير: محاضرتك غداً / Reminder: your lecture is tomorrow';
+
+    const subject = sameDay
+      ? `تذكير — محاضرتك بعد ٣ ساعات تقريباً ${booking.date || ''}`
+      : `تذكير — محاضرتك غداً ${booking.date || ''}`;
+
+    const message = [
+      when,
+      '',
+      `👤 ${booking.studentName || 'طالب'}`,
+      `📅 الموعد: ${booking.date || '—'}`,
+      `⏰ المدة: ${booking.duration || booking.hours || 1} ساعة`,
+      '',
+      'نتمنى لكم درساً موفقاً — معهد المعرفة',
+      '',
+      'سياسة الإلغاء: يُرجى الإلغاء قبل ٢٤ ساعة من الموعد، وإلا يبقى الحجز محتسباً حتى لو لم تحضر.',
+      'يمكنكم مراجعة المواعيد من صفحة «مواعيدي» في الموقع.',
+    ].join('\n');
+
+    const results = { emailjs: null, formSubmit: null, success: false };
+
+    if (this.isEmailJsConfigured) {
+      try {
+        await emailjs.send(
+          this.EMAILJS_SERVICE_ID,
+          this.EMAILJS_TEMPLATE_ID,
+          {
+            to_email: toEmail,
+            to_name: booking.studentName || 'Student',
+            subject,
+            message,
+            appointment_date: booking.date || '',
+            duration: booking.duration || booking.hours || 1,
+            reminder_kind: kind,
+            from_name: 'معهد المعرفة / MS Education',
+            reply_to: 'mohanadsfe@gmail.com',
+          },
+          this.EMAILJS_USER_ID
+        );
+        results.emailjs = { success: true };
+        results.success = true;
+      } catch (e) {
+        console.error('EmailJS student reminder failed', e);
+        results.emailjs = { success: false, message: e.message };
+      }
+    }
+
+    try {
+      const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(toEmail)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          _subject: subject,
+          name: 'معهد المعرفة',
+          email: 'mohanadsfe@gmail.com',
+          message,
+          _template: 'table',
+        }),
+      });
+      results.formSubmit = { success: res.ok };
+      if (res.ok) results.success = true;
+    } catch (e) {
+      console.error('FormSubmit student reminder failed', e);
+      results.formSubmit = { success: false, message: e.message };
+    }
+
+    return results;
+  }
 
   /**
    * Send email notification for teacher approval
    */
   static async sendTeacherApprovalEmail(userEmail, userName, status, notes = '') {
     try {
-      // Check if EmailJS is properly configured
-      if (this.EMAILJS_SERVICE_ID === 'service_placeholder' || 
-          this.EMAILJS_TEMPLATE_ID === 'template_placeholder' || 
-          this.EMAILJS_USER_ID === 'user_placeholder') {
-        return { 
-          success: false, 
-          message: 'EmailJS not configured. Please set up EmailJS credentials in NotificationService.js' 
+      if (!this.isEmailJsConfigured) {
+        return {
+          success: false,
+          message: 'EmailJS not configured. Set REACT_APP_EMAILJS_* env vars or use FormSubmit for bookings.',
         };
       }
 
@@ -148,13 +412,10 @@ ${status === 'approved'
    */
   static async sendAppointmentConfirmation(data) {
     try {
-      // Check if EmailJS is properly configured
-      if (this.EMAILJS_SERVICE_ID === 'service_placeholder' || 
-          this.EMAILJS_TEMPLATE_ID === 'template_placeholder' || 
-          this.EMAILJS_USER_ID === 'user_placeholder') {
-        return { 
-          success: false, 
-          message: 'EmailJS not configured. Please set up EmailJS credentials in NotificationService.js' 
+      if (!this.isEmailJsConfigured) {
+        return {
+          success: false,
+          message: 'EmailJS not configured. Set REACT_APP_EMAILJS_* env vars.',
         };
       }
 
