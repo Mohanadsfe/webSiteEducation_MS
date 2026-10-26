@@ -48,6 +48,7 @@ export default function HourBookingScheduler() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState('');
   const [monthCursor, setMonthCursor] = useState(dayjs().startOf('month'));
   const [selectedDay, setSelectedDay] = useState(dayjs().format('YYYY-MM-DD'));
   const [duration, setDuration] = useState(1); // max 2 hours per day
@@ -236,21 +237,27 @@ export default function HourBookingScheduler() {
 
     setSaving(true);
     setError('');
+    setSaved('');
     try {
       const idn = await resolveStudentBookingIdentity(user.uid);
-      const studentName = idn.studentName || profile.name;
-      const studentEmail = idn.studentEmail || profile.email;
-      const studentPhone = idn.studentPhone || profile.phone;
+      const studentEmail = idn.studentEmail || profile.email || user.email || '';
+      const studentName = idn.studentName || profile.name || studentEmail || 'طالب';
+      const studentPhone = idn.studentPhone || profile.phone || '';
 
-      if (!studentName || !studentEmail) {
-        alert(t('أكمل الاسم والبريد في ملفك الشخصي ثم احجز.', 'השלימו שם ואימייל בפרופיל ואז הזמינו.'));
+      if (!studentEmail) {
+        alert(t('أكمل البريد في ملفك الشخصي ثم احجز.', 'השלימו אימייל בפרופיל ואז הזמינו.'));
         setSaving(false);
         return;
       }
 
       const start = dayjs(`${selectedDay}T${selectedSlot}:00`);
       const salahInHour = prayersInSlot(selectedSlot, duration);
-      const fresh = await AppointmentsService.listAll();
+      let fresh = appointments;
+      try {
+        fresh = await AppointmentsService.listAll();
+      } catch (readErr) {
+        console.warn('Could not refresh appointments before save', readErr);
+      }
       if (slotConflicts(start, duration, fresh)) {
         setError(t('هذا الموعد أصبح محجوزاً — اختر وقتاً آخر', 'התור נתפס — בחרו שעה אחרת'));
         setAppointments(fresh);
@@ -275,6 +282,8 @@ export default function HourBookingScheduler() {
         teacherPhone: '0548010225',
         title: t('حجز ساعة دراسية', 'הזמנת שעת לימוד'),
         date: start.format('YYYY-MM-DDTHH:mm:ss'),
+        dateKey: selectedDay,
+        startTime: selectedSlot,
         duration,
         hours: duration,
         status: 'confirmed',
@@ -287,12 +296,15 @@ export default function HourBookingScheduler() {
           ? 'وافق الطالب: يذهب المعلّم للصلاة ثم يعود، أو تكون المحاضرة ٤٥ دقيقة بدل ٦٠ دقيقة.'
           : '',
         salahDuringLesson: salahInHour.map((w) => ({
-          name: w.name,
-          time: w.salahTime,
+          name: String(w.name || ''),
+          time: String(w.salahTime || ''),
         })),
       };
 
       const created = await AppointmentsService.createConfirmedBooking(payload);
+      setAppointments((prev) => (
+        prev.some((a) => a.id === created.id) ? prev : [...prev, created]
+      ));
       try {
         await NotificationService.notifyOwnerOfBooking({
           id: created.id,
@@ -318,12 +330,22 @@ export default function HourBookingScheduler() {
         studentEmail,
         studentPhone,
       });
+      setSaved(t(
+        `تم الحجز: ${selectedDay} الساعة ${selectedSlot}. يظهر في مواعيدي وعند المالك.`,
+        `ההזמנה נשמרה: ${selectedDay} בשעה ${selectedSlot}. מופיעה אצלך ואצל הבעלים.`
+      ));
       setPaymentOpen(true);
       setSelectedSlot('');
       setProfile({ name: studentName, email: studentEmail, phone: studentPhone });
     } catch (e) {
       console.error(e);
-      setError(e.message || t('فشل الحجز', 'ההזמנה נכשלה'));
+      const denied = String(e?.code || e?.message || '').includes('permission');
+      setError(denied
+        ? t(
+          'لم يُحفظ الحجز بسبب الصلاحيات. سجّل الخروج ثم الدخول وحاول مرة أخرى.',
+          'ההזמנה לא נשמרה בגלל הרשאות. התנתקו, התחברו ונסו שוב.'
+        )
+        : (e.message || t('فشل الحجز', 'ההזמנה נכשלה')));
     } finally {
       setSaving(false);
     }
@@ -436,6 +458,11 @@ export default function HourBookingScheduler() {
           />
         </Stack>
 
+        {saved && (
+          <Alert severity="success" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setSaved('')}>
+            {saved}
+          </Alert>
+        )}
         {error && (
           <Alert severity="error" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setError('')}>
             {error}

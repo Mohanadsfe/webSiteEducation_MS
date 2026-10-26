@@ -3,8 +3,8 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineString } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { selectSmsJobs, toE164 } = require('./reminders');
-const { sendSms } = require('./sms');
+const { selectSmsJobs, parseStart } = require('./reminders');
+const { sendWebPush } = require('./push');
 
 const OWNER_EMAILS = new Set([
   'safi89099@gmail.com',
@@ -13,24 +13,61 @@ const OWNER_EMAILS = new Set([
 
 initializeApp();
 
-const twilioSid = defineString('TWILIO_ACCOUNT_SID', { default: '' });
-const twilioToken = defineString('TWILIO_AUTH_TOKEN', { default: '' });
-const twilioFrom = defineString('TWILIO_FROM_NUMBER', { default: '' });
+const pushPublic = defineString('WEB_PUSH_PUBLIC_KEY', { default: '' });
+const pushPrivate = defineString('WEB_PUSH_PRIVATE_KEY', { default: '' });
+const pushSubject = defineString('WEB_PUSH_SUBJECT', { default: 'mailto:mohanadsfe@gmail.com' });
 
 const FLAG = {
-  day_before: 'reminderDayBeforeSmsSent',
-  hours3: 'reminderHours3SmsSent',
+  day_before: 'reminderDayBeforeCloudSent',
+  hours3: 'reminderHours3CloudSent',
 };
 
-function twilioCredentials() {
+function pushCredentials() {
   return {
-    accountSid: twilioSid.value(),
-    authToken: twilioToken.value(),
-    fromNumber: twilioFrom.value(),
+    publicKey: pushPublic.value(),
+    privateKey: pushPrivate.value(),
+    subject: pushSubject.value(),
   };
 }
 
-/** Owner/teacher sends one SMS to a chosen student. */
+async function deliverToStudent(studentId, body) {
+  const db = getFirestore();
+  const title = 'معهد المعرفة';
+  await db.collection('notifications').add({
+    userId: studentId,
+    title,
+    body,
+    read: false,
+    url: '/my-bookings',
+    createdAt: new Date(),
+  });
+
+  const user = await db.collection('users').doc(studentId).get();
+  const subs = user.exists && Array.isArray(user.get('pushSubscriptions'))
+    ? user.get('pushSubscriptions')
+    : [];
+  const credentials = pushCredentials();
+  const dead = [];
+  let pushed = 0;
+  for (const sub of subs) {
+    const result = await sendWebPush(sub, { title, body, url: '/my-bookings' }, credentials);
+    if (result.ok) {
+      pushed += 1;
+    } else if (result.statusCode === 404 || result.statusCode === 410) {
+      dead.push(sub);
+    } else if (result.error && result.error !== 'missing web push keys') {
+      console.error('Push failed', studentId, result.statusCode || '', result.error);
+    }
+  }
+  if (dead.length) {
+    await db.collection('users').doc(studentId).update({
+      pushSubscriptions: FieldValue.arrayRemove(...dead),
+    });
+  }
+  return { stored: true, pushed };
+}
+
+/** Owner/teacher sends one lecture notice to a chosen student. */
 exports.sendStudentSms = onCall(
   {
     region: 'europe-west1',
@@ -54,29 +91,24 @@ exports.sendStudentSms = onCall(
     }
 
     const message = String(request.data?.message || '').trim();
-    const phone = toE164(request.data?.phone || '');
-    if (!phone) {
-      throw new HttpsError('invalid-argument', 'رقم الهاتف غير صالح');
+    const studentId = String(request.data?.studentId || '').trim();
+    if (!studentId) {
+      throw new HttpsError('invalid-argument', 'اختر طالباً');
     }
     if (!message || message.length > 480) {
       throw new HttpsError('invalid-argument', 'اكتب رسالة قصيرة');
     }
 
-    const result = await sendSms(phone, message, twilioCredentials());
-    if (!result.ok) {
-      throw new HttpsError('failed-precondition', result.error || 'فشل الإرسال');
-    }
-    return { ok: true };
+    const result = await deliverToStudent(studentId, message);
+    return { ok: true, pushed: result.pushed };
   }
 );
 
 /**
- * Every 15 minutes: text the student with no click.
+ * Every 15 minutes, with no click:
  * 1) The day before the lecture (from 08:00, Asia/Jerusalem)
  * 2) About 3 hours before the lecture starts
- *
- * Needs Twilio once: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER
- * in functions/.env, then deploy. After that the job sends by itself.
+ * Saved in the site, and pushed to the phone if the student allowed notifications.
  */
 exports.sendLectureSmsReminders = onSchedule(
   {
@@ -87,19 +119,21 @@ exports.sendLectureSmsReminders = onSchedule(
     memory: '256MiB',
   },
   async () => {
-    const credentials = twilioCredentials();
-    if (!credentials.accountSid || !credentials.authToken || !credentials.fromNumber) {
-      console.error(
-        'SMS reminders skipped: set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER'
-      );
-      return;
-    }
-
     const db = getFirestore();
     const snap = await db.collection('appointments').get();
     const appointments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    for (const appt of appointments) {
+      if (appt.startAt) continue;
+      const start = parseStart(appt.date)
+        || (appt.dateKey && appt.startTime
+          ? parseStart(`${appt.dateKey}T${appt.startTime}:00`)
+          : null);
+      if (!start) continue;
+      await db.collection('appointments').doc(appt.id).update({ startAt: start.toDate() });
+      appt.startAt = start.toDate();
+    }
     const jobs = selectSmsJobs(appointments, new Date());
-    console.log(`SMS reminder jobs: ${jobs.length}`);
+    console.log(`Lecture reminder jobs: ${jobs.length}`);
 
     for (const job of jobs) {
       const ref = db.collection('appointments').doc(job.id);
@@ -115,16 +149,15 @@ exports.sendLectureSmsReminders = onSchedule(
       });
       if (!claimed) continue;
 
-      const result = await sendSms(job.phone, job.body, credentials);
-      if (!result.ok) {
-        console.error('SMS failed', job.id, job.kind, result.error);
+      try {
+        const result = await deliverToStudent(job.studentId, job.body);
+        console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed);
+      } catch (e) {
+        console.error('Reminder failed', job.id, job.kind, e.message);
         await ref.update({
           [flag]: FieldValue.delete(),
           [`${flag}At`]: FieldValue.delete(),
-          reminderSmsLastError: result.error || 'send failed',
         });
-      } else {
-        console.log('SMS sent', job.id, job.kind, job.phone);
       }
     }
   }

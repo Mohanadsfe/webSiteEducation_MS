@@ -99,16 +99,30 @@ service cloud.firestore {
                           'reminderDayBeforeSent', 'reminderDayBeforeSentAt',
                           'reminderMorningSent', 'reminderMorningSentAt',
                           'reminderHours5Sent', 'reminderHours5SentAt']));
-      // Only owner/teacher may delete active bookings (frees the hour on the schedule).
-      // Signed-in users may purge past 90-day retention only.
+      // Owner/teacher may cancel any booking. A student may cancel only her own
+      // booking, and only when the lecture starts more than 24 hours from now.
+      // Signed-in users may still purge past 90-day retention.
       allow delete: if isTeacher()
         || isOwnerEmail()
+        || (signedIn()
+            && resource.data.studentId == request.auth.uid
+            && resource.data.startAt is timestamp
+            && resource.data.startAt > request.time + duration.value(24, 'h'))
         || (signedIn()
             && resource.data.expiresAt != null
             && request.time >= resource.data.expiresAt)
         || (signedIn()
             && resource.data.createdAt != null
             && request.time >= resource.data.createdAt + duration.value(90, 'd'));
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      allow create, delete: if false;
     }
 
     match /opinions/{id} {

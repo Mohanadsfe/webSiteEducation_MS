@@ -21,6 +21,7 @@ import BookingManagePage from './pages/Bookings/BookingManagePage';
 import TeacherApprovals from './pages/Admin/TeacherApprovals';
 import ExamReminder from './components/common/ExamReminder';
 import BookingReminder from './components/common/BookingReminder';
+import LecturePush from './components/common/LecturePush';
 import { LanguageProvider } from './context/LanguageContext';
 import theme from './theme';
 
@@ -34,6 +35,7 @@ function AppContent() {
       {!shouldHideNavbar && <Navbar />}
       {!shouldHideNavbar && <ExamReminder />}
       {!shouldHideNavbar && <BookingReminder />}
+      {!shouldHideNavbar && <LecturePush />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />

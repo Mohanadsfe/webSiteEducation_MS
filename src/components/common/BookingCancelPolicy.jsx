@@ -1,10 +1,12 @@
 import React from 'react';
 import { Alert, Typography } from '@mui/material';
+import { useLanguage } from '../../context/LanguageContext';
 
 /**
- * Arabic cancel policy — shown when booking / viewing appointments.
+ * Cancel policy — student self-cancel is only more than 24 hours before the lecture.
  */
 export default function BookingCancelPolicy({ dense = false }) {
+  const { t } = useLanguage();
   return (
     <Alert
       severity="warning"
@@ -16,12 +18,13 @@ export default function BookingCancelPolicy({ dense = false }) {
       }}
     >
       <Typography fontWeight={900} sx={{ mb: 0.5, fontSize: dense ? '0.9rem' : '1rem' }}>
-        سياسة إلغاء المحاضرة
+        {t('سياسة إلغاء المحاضرة', 'מדיניות ביטול שיעור')}
       </Typography>
       <Typography fontWeight={700} sx={{ lineHeight: 1.85, fontSize: dense ? '0.82rem' : '0.92rem' }}>
-        إذا رغبت بإلغاء المحاضرة، يُرجى الإلغاء قبل ٢٤ ساعة على الأقل من موعد الدرس.
-        بعد مرور أقل من ٢٤ ساعة يبقى الحجز قائماً ويُحتسب حتى لو لم تحضر الدرس.
-        نقدّر تفهمكم ونعتذر عن أي إزعاج — نحرص على احترام وقت الجميع وتنظيم المواعيد بعدل.
+        {t(
+          'يمكن للطالب إلغاء حجزه من «مواعيدي» إذا تبقّى أكثر من ٢٤ ساعة على بدء المحاضرة، وتعود الساعة للجدول. إذا بقي أقل من ٢٤ ساعة لا يُلغى الحجز من الموقع؛ للإلغاء الضروري تواصل أولاً مع المالك عبر واتساب. المالك يستطيع إلغاء أي حجز في أي وقت.',
+          'תלמיד יכול לבטל הזמנה ב«התורים שלי» רק אם נשארו יותר מ-24 שעות לתחילת השיעור, והשעה חוזרת ללוח. אם נשארו פחות מ-24 שעות אי אפשר לבטל באתר; לביטול הכרחי יש לדבר קודם עם הבעלים בוואטסאפ. הבעלים יכול לבטל כל הזמנה בכל זמן.'
+        )}
       </Typography>
     </Alert>
   );

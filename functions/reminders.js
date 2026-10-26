@@ -105,10 +105,13 @@ function selectSmsJobs(appointments, nowInput) {
 
   for (const appt of appointments) {
     if (!appt || !appt.id || !isActive(appt, now)) continue;
-    const start = parseStart(appt.date);
+    const start = parseStart(appt.date)
+      || (appt.dateKey && appt.startTime
+        ? parseStart(`${appt.dateKey}T${appt.startTime}:00`)
+        : null);
     if (!start) continue;
-    const phone = toE164(appt.studentPhone);
-    if (!phone) continue;
+    const studentId = String(appt.studentId || '');
+    if (!studentId) continue;
 
     const minutesLeft = start.diff(now, 'minute');
     if (minutesLeft <= 0) continue;
@@ -116,21 +119,21 @@ function selectSmsJobs(appointments, nowInput) {
     if (
       start.format('YYYY-MM-DD') === tomorrow
       && now.hour() >= 8
-      && !appt.reminderDayBeforeSmsSent
+      && !appt.reminderDayBeforeCloudSent
     ) {
       jobs.push({
         id: appt.id,
+        studentId,
         kind: 'day_before',
-        phone,
         body: dayBeforeText(appt, start),
       });
     }
 
-    if (minutesLeft <= 180 && !appt.reminderHours3SmsSent) {
+    if (minutesLeft <= 180 && !appt.reminderHours3CloudSent) {
       jobs.push({
         id: appt.id,
+        studentId,
         kind: 'hours3',
-        phone,
         body: hours3Text(appt, start, minutesLeft),
       });
     }

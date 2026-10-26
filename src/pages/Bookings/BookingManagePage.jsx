@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   ArrowBack, Save, Delete, PersonAdd, Refresh, EventBusy,
-  Search, Email, Phone, AccessTime, CalendarMonth, Person, WhatsApp, Sms, SwapHoriz
+  Search, Email, Phone, AccessTime, CalendarMonth, Person, WhatsApp, Notifications, SwapHoriz
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -36,7 +36,7 @@ import {
 import { isOwnerAdminEmail } from '../../constants/admin';
 import { useLanguage } from '../../context/LanguageContext';
 import NotificationService from '../../services/NotificationService';
-import { sendOwnerSms, smsErrorText } from '../../services/SmsService';
+import { sendStudentNotice, noticeErrorText } from '../../services/SmsService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
 import {
   buildStudentLectureReminderMessage,
@@ -128,7 +128,10 @@ export default function BookingManagePage() {
   };
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    let unsubBookings = () => {};
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      unsubBookings();
+      unsubBookings = () => {};
       if (!user) {
         navigate('/login');
         return;
@@ -141,6 +144,21 @@ export default function BookingManagePage() {
         return;
       }
       setAllowed(true);
+      unsubBookings = AppointmentsService.subscribeAll(
+        (list) => {
+          setBookings(list.slice().sort((a, b) => {
+            const da = parseAppointmentStart(a)?.valueOf() || 0;
+            const dbv = parseAppointmentStart(b)?.valueOf() || 0;
+            return dbv - da;
+          }));
+          setLoading(false);
+        },
+        (err) => {
+          console.error(err);
+          setError(err.message || 'فشل تحميل الحجوزات');
+          setLoading(false);
+        }
+      );
       try {
         await reload();
       } catch (e) {
@@ -149,7 +167,10 @@ export default function BookingManagePage() {
         setLoading(false);
       }
     });
-    return unsub;
+    return () => {
+      unsubAuth();
+      unsubBookings();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
@@ -157,8 +178,8 @@ export default function BookingManagePage() {
     const map = new Map();
     bookings.forEach((b) => {
       const start = parseAppointmentStart(b);
-      if (!start) return;
-      const key = start.format('YYYY-MM-DD');
+      const key = start ? start.format('YYYY-MM-DD') : b.dateKey;
+      if (!key) return;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(b);
     });
@@ -576,10 +597,10 @@ export default function BookingManagePage() {
     }
   };
 
-  const sendOneSms = async (phone, message, bookingId = '') => {
+  const sendOneNotice = async (studentId, message, bookingId = '') => {
     const text = String(message || '').trim();
-    if (!phone) {
-      setError(t('لا يوجد رقم هاتف لهذا الطالب', 'אין מספר טלפון לתלמיד'));
+    if (!studentId) {
+      setError(t('لا يوجد حساب لهذا الطالب', 'אין חשבון לתלמיד'));
       return;
     }
     if (!text) {
@@ -590,11 +611,11 @@ export default function BookingManagePage() {
     else setSmsSending(true);
     setError('');
     try {
-      await sendOwnerSms(phone, text);
-      setOk(t('تم إرسال الرسالة للطالب', 'ההודעה נשלחה לתלמיד'));
+      await sendStudentNotice(studentId, text);
+      setOk(t('تم إرسال الإشعار للطالب', 'ההתראה נשלחה לתלמיד'));
       if (!bookingId) setSmsText('');
     } catch (e) {
-      setError(smsErrorText(e));
+      setError(noticeErrorText(e));
     } finally {
       setSmsSending(false);
       setSmsBookingId('');
@@ -1399,20 +1420,20 @@ export default function BookingManagePage() {
 
       <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-          <Sms color="primary" />
+          <Notifications color="primary" />
           <Typography fontWeight={900}>
-            {t('رسالة SMS لطالب محدد', 'SMS לתלמיד מסוים')}
+            {t('إشعار لطالب محدد', 'התראה לתלמיד מסוים')}
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t(
-            'اختر الطالب، اكتب الرسالة، ثم اضغط إرسال مرة واحدة.',
-            'בחרו תלמיד, כתבו הודעה, ולחצו שליחה פעם אחת.'
+            'اختر الطالب، اكتب الرسالة، ثم اضغط إرسال مرة واحدة. تصل داخل الموقع وعلى جهازه إذا سمح بالإشعارات.',
+            'בחרו תלמיד, כתבו הודעה, ולחצו שליחה פעם אחת. מגיעה באתר ובמכשיר אם אישר התראות.'
           )}
         </Typography>
         <Stack spacing={1.5}>
           <Autocomplete
-            options={students.filter((s) => s.phoneNumber || s.phone)}
+            options={students}
             value={smsStudent}
             onChange={(_e, value) => setSmsStudent(value)}
             getOptionLabel={studentLabel}
@@ -1427,7 +1448,7 @@ export default function BookingManagePage() {
           />
           {smsStudent && (
             <Typography variant="body2" fontWeight={700}>
-              {(smsStudent.phoneNumber || smsStudent.phone)}
+              {smsStudent.email || smsStudent.phoneNumber || smsStudent.phone}
             </Typography>
           )}
           <TextField
@@ -1441,9 +1462,9 @@ export default function BookingManagePage() {
           />
           <Button
             variant="contained"
-            startIcon={smsSending ? <CircularProgress size={16} color="inherit" /> : <Sms />}
+            startIcon={smsSending ? <CircularProgress size={16} color="inherit" /> : <Notifications />}
             disabled={smsSending || !smsStudent || !smsText.trim()}
-            onClick={() => sendOneSms(smsStudent?.phoneNumber || smsStudent?.phone, smsText)}
+            onClick={() => sendOneNotice(smsStudent?.id, smsText)}
             sx={{ fontWeight: 900, alignSelf: 'flex-start' }}
           >
             {t('إرسال', 'שליחה')}
@@ -1776,13 +1797,13 @@ export default function BookingManagePage() {
                           const mins = start2 ? start2.diff(dayjs(), 'minute') : 99999;
                           const kind = mins > 0 && mins <= 180 ? 'hours3' : 'day_before';
                           const msg = buildStudentLectureReminderMessage({ ...b, date: when }, kind);
-                          sendOneSms(b.studentPhone, msg, b.id);
+                          sendOneNotice(b.studentId, msg, b.id);
                         }}
-                        title={t('إرسال SMS لهذا الطالب', 'שליחת SMS לתלמיד זה')}
+                        title={t('إرسال إشعار لهذا الطالب', 'שליחת התראה לתלמיד זה')}
                       >
                         {smsBookingId === b.id
                           ? <CircularProgress size={18} />
-                          : <Sms />}
+                          : <Notifications />}
                       </IconButton>
                       <IconButton
                         color="info"

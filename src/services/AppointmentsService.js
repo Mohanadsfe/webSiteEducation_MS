@@ -28,14 +28,23 @@ const BLOCKING_STATUSES = new Set([
 function toMillis(value) {
   if (!value) return null;
   if (typeof value.toMillis === 'function') return value.toMillis();
+  if (typeof value.toDate === 'function') return value.toDate().getTime();
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number') return value;
+  if (typeof value === 'object' && typeof value.seconds === 'number') return value.seconds * 1000;
   const d = dayjs(value);
   return d.isValid() ? d.valueOf() : null;
 }
 
-/** Booking kept for 90 days from createdAt (or expiresAt if set). */
+/** Booking kept until the lesson is over, then 90 days from createdAt (or expiresAt). */
 export function isAppointmentExpired(appt, nowMs = Date.now()) {
+  const lessonMs = toMillis(appt?.date)
+    || (appt?.dateKey && appt?.startTime
+      ? toMillis(`${appt.dateKey}T${appt.startTime}:00`)
+      : null);
+  // A lesson that has not started yet must stay on the schedule.
+  if (lessonMs != null && lessonMs > nowMs) return false;
+
   const expiresMs = toMillis(appt?.expiresAt);
   if (expiresMs != null) return nowMs >= expiresMs;
 
@@ -44,12 +53,28 @@ export function isAppointmentExpired(appt, nowMs = Date.now()) {
     return nowMs >= createdMs + BOOKING_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   }
 
-  // Legacy docs without dates: expire from lesson date + 90 days
-  const lessonMs = toMillis(appt?.date);
   if (lessonMs != null) {
     return nowMs >= lessonMs + BOOKING_RETENTION_DAYS * 24 * 60 * 60 * 1000;
   }
   return false;
+}
+
+function cleanForFirestore(value) {
+  if (value === undefined) return undefined;
+  if (value instanceof Date) return value;
+  if (typeof value?.toMillis === 'function') return value;
+  if (Array.isArray(value)) {
+    return value.map(cleanForFirestore).filter((v) => v !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    const out = {};
+    Object.entries(value).forEach(([key, inner]) => {
+      const cleaned = cleanForFirestore(inner);
+      if (cleaned !== undefined) out[key] = cleaned;
+    });
+    return out;
+  }
+  return value;
 }
 
 export function bookingExpiresAt(fromDate = new Date()) {
@@ -86,11 +111,39 @@ export function isBlockingAppointment(appt) {
   );
 }
 
+/** Student may cancel on the site only when the lecture is more than 24 hours away. */
+export const STUDENT_CANCEL_LEAD_MS = 24 * 60 * 60 * 1000;
+
+export function studentCanCancelBooking(appt, nowMs = Date.now()) {
+  const start = parseAppointmentStart(appt);
+  if (!start) return false;
+  return start.valueOf() - nowMs > STUDENT_CANCEL_LEAD_MS;
+}
+
+function startAtFromPayload(payload) {
+  const start = parseAppointmentStart(payload);
+  return start ? start.toDate() : undefined;
+}
+
 export function parseAppointmentStart(appt) {
   const raw = appt?.date;
-  if (!raw) return null;
-  const d = dayjs(raw);
-  return d.isValid() ? d : null;
+  if (raw) {
+    if (typeof raw.toDate === 'function') {
+      const d = dayjs(raw.toDate());
+      if (d.isValid()) return d;
+    } else if (raw instanceof Date || typeof raw === 'string' || typeof raw === 'number') {
+      const d = dayjs(raw);
+      if (d.isValid()) return d;
+    } else if (typeof raw === 'object' && typeof raw.seconds === 'number') {
+      const d = dayjs(raw.seconds * 1000);
+      if (d.isValid()) return d;
+    }
+  }
+  if (appt?.dateKey && appt?.startTime) {
+    const d = dayjs(`${appt.dateKey}T${appt.startTime}:00`);
+    if (d.isValid()) return d;
+  }
+  return null;
 }
 
 export function appointmentEnd(appt) {
@@ -148,26 +201,32 @@ export class AppointmentsService {
     return removed;
   }
 
-  /** Live listener — all appointments (used to hide booked slots) */
+  /** Live listener — all appointments (used to hide booked slots). Does not delete. */
   static subscribeAll(onData, onError) {
     return onSnapshot(
       collection(db, 'appointments'),
-      async (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        // Auto-remove expired from database whenever the schedule loads
-        const expired = list.filter((a) => isAppointmentExpired(a));
-        if (expired.length) {
-          await Promise.all(
-            expired.map(async (a) => {
-              try {
-                await deleteDoc(doc(db, 'appointments', a.id));
-              } catch {
-                /* permission or race */
-              }
-            })
-          );
-        }
-        onData(list.filter((a) => !isAppointmentExpired(a)));
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((a) => !isAppointmentExpired(a));
+        onData(list);
+      },
+      onError
+    );
+  }
+
+  static subscribeForStudent(studentId, onData, onError) {
+    const q1 = query(
+      collection(db, 'appointments'),
+      where('studentId', '==', studentId)
+    );
+    return onSnapshot(
+      q1,
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((a) => !isAppointmentExpired(a));
+        onData(list);
       },
       onError
     );
@@ -191,15 +250,16 @@ export class AppointmentsService {
 
   static async createConfirmedBooking(payload) {
     const createdAt = new Date();
-    const data = {
+    const data = cleanForFirestore({
       ...payload,
       status: 'confirmed',
       paymentStatus: payload.paymentStatus || 'awaiting',
       confirmedAt: createdAt,
       createdAt,
+      startAt: startAtFromPayload(payload),
       expiresAt: bookingExpiresAt(createdAt),
       retentionDays: BOOKING_RETENTION_DAYS,
-    };
+    });
     const ref = await addDoc(collection(db, 'appointments'), data);
     return { id: ref.id, ...data };
   }
@@ -212,11 +272,13 @@ export class AppointmentsService {
       status: payload.status || 'confirmed',
       paymentStatus: payload.paymentStatus || 'owner_set',
       createdAt,
+      startAt: startAtFromPayload(payload),
       expiresAt: bookingExpiresAt(createdAt),
       retentionDays: BOOKING_RETENTION_DAYS,
       bookedBy: payload.bookedBy || 'owner',
       source: payload.source || 'owner_manage',
     };
+    if (!data.startAt) delete data.startAt;
     const ref = await addDoc(collection(db, 'appointments'), data);
     return { id: ref.id, ...data };
   }
