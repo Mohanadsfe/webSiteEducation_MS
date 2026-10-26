@@ -370,9 +370,14 @@ function Navbar() {
             </Button>
 
             {isLoggedIn && role === 'student' && (
-              <Button color="inherit" component={Link} to="/me" sx={{ fontWeight: 800 }}>
-                {t('حسابي', 'החשבון שלי')}
-              </Button>
+              <>
+                <Button color="inherit" component={Link} to="/me" sx={{ fontWeight: 800 }}>
+                  {t('حسابي', 'החשבון שלי')}
+                </Button>
+                <Button color="inherit" component={Link} to="/me#settings" sx={{ fontWeight: 800 }}>
+                  {t('اعدادات', 'הגדרות')}
+                </Button>
+              </>
             )}
 
             {isLoggedIn && (role === 'teacher' || isOwnerAdminEmail(userEmail)) && (

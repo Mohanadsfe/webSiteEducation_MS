@@ -405,6 +405,9 @@ function HomePage() {
                 <Button size="small" variant="outlined" onClick={() => navigate('/me')}>
                   {t('حسابي', 'החשבון שלי')}
                 </Button>
+                <Button size="small" variant="outlined" onClick={() => navigate('/me#settings')}>
+                  {t('اعدادات', 'הגדרות')}
+                </Button>
                 {track === 'bagrut' && (
                   <Button size="small" variant="contained" color="error" onClick={() => navigate('/bundles')}>
                     {t('امتحاناتي / رزمات بجروت', 'מבחנים / חבילות בגרות')}

@@ -5,6 +5,8 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
 const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
+const { deleteAccountData } = require('./account');
+const { getAuth } = require('firebase-admin/auth');
 
 const OWNER_EMAILS = new Set([
   'safi89099@gmail.com',
@@ -192,5 +194,37 @@ exports.sendLectureSmsReminders = onSchedule(
         });
       }
     }
+  }
+);
+
+/** The signed-in user deletes her own login and the records stored for that account. */
+exports.deleteMyAccount = onCall(
+  {
+    region: 'europe-west1',
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول');
+    }
+    const uid = request.auth.uid;
+    const email = String(request.auth.token.email || '').toLowerCase();
+    if (OWNER_EMAILS.has(email)) {
+      throw new HttpsError('permission-denied', 'لا يمكن حذف حساب المالك');
+    }
+    await deleteAccountData(getFirestore(), uid, email);
+    try {
+      await getAuth().deleteUser(uid);
+    } catch (e) {
+      if (e.code !== 'auth/user-not-found') {
+        console.error('Auth delete failed', e.code || 'auth-delete-failed');
+        throw new HttpsError('internal', 'حُذفت البيانات وتعذر إغلاق تسجيل الدخول');
+      }
+    }
+    console.log('Account deleted');
+    return { ok: true };
   }
 );

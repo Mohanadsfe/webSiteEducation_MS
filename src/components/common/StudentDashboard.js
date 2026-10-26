@@ -2,19 +2,28 @@
 import React, { useEffect, useState } from 'react';
 import {
   Container, Grid, Card, CardContent, Typography, LinearProgress,
-  Chip, Box
+  Chip, Box, Paper
 } from '@mui/material';
+import { useLanguage } from '../../context/LanguageContext';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   collection, query, where, onSnapshot, orderBy
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import DeleteMyAccount from './DeleteMyAccount';
 
 export default function StudentDashboard() {
+  const { t } = useLanguage();
   const [enrollments, setEnrollments] = useState([]);
   const [me, setMe] = useState(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (window.location.hash === '#settings') {
+      document.getElementById('settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [me]);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (user) => {
@@ -123,6 +132,15 @@ export default function StudentDashboard() {
           })}
         </Grid>
       )}
+      <Paper id="settings" sx={{ p: 2.5, mt: 4, borderRadius: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 900, mb: 0.5 }}>
+          {t('اعدادات', 'הגדרות')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          {t('من هنا يمكنك حذف حسابك وكل بياناتك.', 'מכאן אפשר למחוק את החשבון ואת כל הנתונים.')}
+        </Typography>
+        <DeleteMyAccount />
+      </Paper>
     </Container>
   );
 }
