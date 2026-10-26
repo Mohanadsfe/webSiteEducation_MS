@@ -23,6 +23,43 @@ export function buildWhatsAppUrl(message) {
   return `https://wa.me/${OWNER_WHATSAPP}?text=${encodeURIComponent(message)}`;
 }
 
+/** Booking details for WhatsApp. audience: 'owner' (to the institute) or 'student'. */
+export function buildBookingWhatsAppText({
+  audience = 'student',
+  studentName,
+  date,
+  duration,
+  studentPhone,
+  studentEmail,
+  note,
+} = {}) {
+  const hours = duration || 1;
+  if (audience === 'owner') {
+    return [
+      'معهد المعرفة — MS Education',
+      'حجز محاضرة جديد',
+      '',
+      `الطالبة: ${studentName || '—'}`,
+      `الموعد: ${date || '—'}`,
+      `المدة: ${hours} ساعة`,
+      studentPhone ? `الهاتف: ${studentPhone}` : '',
+      studentEmail ? `البريد: ${studentEmail}` : '',
+      note ? `ملاحظة: ${note}` : '',
+    ].filter(Boolean).join('\n');
+  }
+  return [
+    'معهد المعرفة — MS Education',
+    '',
+    `مرحباً ${studentName || ''}، تم تأكيد حجز محاضرتك.`,
+    `الموعد: ${date || '—'}`,
+    `المدة: ${hours} ساعة`,
+    note ? `ملاحظة: ${note}` : '',
+    'للإلغاء من الموقع: قبل أكثر من ٢٤ ساعة من بدء المحاضرة.',
+    '',
+    'معهد المعرفة',
+  ].filter(Boolean).join('\n');
+}
+
 /** Digits only for wa.me — keep leading country code when possible */
 export function normalizePhoneForWhatsApp(phone) {
   let digits = String(phone || '').replace(/\D/g, '');

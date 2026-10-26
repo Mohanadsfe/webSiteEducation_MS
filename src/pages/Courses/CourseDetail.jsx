@@ -14,7 +14,6 @@ import DriveVideoPlayer from '../../components/courses/DriveVideoPlayer';
 import CoursesService from '../../services/CoursesService';
 import EnrollmentsService from '../../services/EnrollmentsService';
 import UsersService from '../../services/UsersService';
-import PaymentMethodDialog from '../../components/common/PaymentMethodDialog';
 import { isOwnerAdminEmail } from '../../constants/admin';
 import CourseContentLicense from '../../components/courses/CourseContentLicense';
 import CourseLicenseAgreementDialog from '../../components/courses/CourseLicenseAgreementDialog';
@@ -39,7 +38,6 @@ export default function CourseDetail() {
   const [enrollment, setEnrollment] = useState(null);
   const [enrollmentStatus, setEnrollmentStatus] = useState('none');
   const [loading, setLoading] = useState(true);
-  const [paymentOpen, setPaymentOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [purchaseNext, setPurchaseNext] = useState('');
   const [personalCode, setPersonalCode] = useState('');
@@ -183,7 +181,7 @@ export default function CourseDetail() {
       setCodeError(
         live?.status === 'revoked'
           ? 'تم إلغاء وصولك من المالك — الكود لم يعد صالحاً.'
-          : 'ليس لديك كود بعد — تواصل مع المالك بعد الدفع ليحصل لك على كود شخصي لهذه الدورة فقط.'
+          : 'ليس لديك كود بعد — تواصل مع المالك ليحصل لك على كود شخصي لهذه الدورة فقط.'
       );
       setShowUnlockPanel(true);
       return;
@@ -252,7 +250,6 @@ export default function CourseDetail() {
     const next = purchaseNext;
     setLicenseOpen(false);
     if (next === 'whatsapp') whatsappAskCode();
-    if (next === 'pay') setPaymentOpen(true);
   };
 
   const whatsappAskCode = () => {
@@ -400,7 +397,7 @@ export default function CourseDetail() {
               شاهد الفيديو الأول مجاناً — من الثاني تحتاج كوداً شخصياً
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-              كل طالب يحصل على كود فريد لهذه الدورة فقط (لا يفتح دورات أخرى). اطلب الكود من المالك بعد الدفع.
+              كل طالب يحصل على كود فريد لهذه الدورة فقط (لا يفتح دورات أخرى). اطلب الكود من المالك.
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
               <Button
@@ -411,9 +408,6 @@ export default function CourseDetail() {
                 sx={{ fontWeight: 800 }}
               >
                 اطلب الكود من المالك
-              </Button>
-              <Button variant="outlined" onClick={() => requestPurchase('pay')} sx={{ fontWeight: 800 }}>
-                طلب وصول / دفع
               </Button>
               <Button variant="text" onClick={() => setShowUnlockPanel(true)} sx={{ fontWeight: 800 }}>
                 لدي كود — فتح الدورة
@@ -459,7 +453,7 @@ export default function CourseDetail() {
               {codeError && <Alert severity="error">{codeError}</Alert>}
               {enrollmentStatus !== 'active' && (
                 <Alert severity="info">
-                  لم يُفعَّل وصولك بعد. ادفع/تواصل مع المالك ليُنشئ لك كوداً فريداً ثم أدخله هنا.
+                  لم يُفعَّل وصولك بعد. تواصل مع المالك ليُنشئ لك كوداً فريداً ثم أدخله هنا.
                 </Alert>
               )}
               <Button variant="contained" onClick={tryUnlock} sx={{ fontWeight: 900 }}>
@@ -794,16 +788,6 @@ export default function CourseDetail() {
         courseTitle={course?.title}
         onClose={() => setLicenseOpen(false)}
         onAgree={continuePurchase}
-      />
-      <PaymentMethodDialog
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        item={{
-          title: course?.title,
-          price: course?.price,
-          category: course?.category,
-          hours: course?.hours,
-        }}
       />
     </Box>
   );

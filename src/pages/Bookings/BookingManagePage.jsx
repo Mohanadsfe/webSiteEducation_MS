@@ -41,6 +41,7 @@ import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
 import {
   buildStudentLectureReminderMessage,
   buildWhatsAppToPhone,
+  buildBookingWhatsAppText,
 } from '../../constants/payment';
 
 const WEEKDAY_AR = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
@@ -574,17 +575,17 @@ export default function BookingManagePage() {
         console.warn('student assign notify', e);
       }
 
-      const waMsg = (
-        `مرحباً ${studentName} 👋\n\n`
-        + `قام المعلّم بحجز محاضرة لك:\n`
-        + `📅 ${start.format('YYYY-MM-DD HH:mm')}\n`
-        + `⏰ ${Number(addForm.duration) || 1} ساعة\n`
-        + (addForm.note ? `📝 ${addForm.note}\n` : '')
-        + `\nراجع «مواعيدي» في الموقع.\n`
-        + `للإلغاء: قبل ٢٤ ساعة من الموعد، وإلا يبقى الحجز محتسباً.\n\nمعهد المعرفة`
-      );
+      const whenLabel = start.format('YYYY-MM-DD HH:mm');
+      const hoursBooked = Number(addForm.duration) || 1;
+      const studentText = buildBookingWhatsAppText({
+        audience: 'student',
+        studentName,
+        date: whenLabel,
+        duration: hoursBooked,
+        note: addForm.note || '',
+      });
       if (studentPhone) {
-        window.open(buildWhatsAppToPhone(studentPhone, waMsg), '_blank', 'noopener,noreferrer');
+        window.open(buildWhatsAppToPhone(studentPhone, studentText), '_blank', 'noopener,noreferrer');
       }
 
       await reload();

@@ -105,10 +105,22 @@ export class CoursesService {
   }
 
   static async updateCourse(courseId, data) {
+    const now = new Date();
     await updateDoc(doc(db, 'courses', courseId), {
       ...data,
-      updatedAt: new Date(),
+      updatedAt: now,
+      contentUpdatedAt: now,
     });
+    try {
+      await WhatsNewService.pushUpdate({
+        type: 'course',
+        title: data.title || 'تحديث دورة',
+        courseId,
+        courseTitle: data.title || '',
+      });
+    } catch (e) {
+      console.warn('whats new course update', e);
+    }
   }
 
   static async deleteCourse(courseId) {

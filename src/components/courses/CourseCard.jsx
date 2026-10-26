@@ -4,7 +4,7 @@ import { Description, PlayCircleOutline, NewReleases, AutoAwesome } from '@mui/i
 import { collection, getCountFromServer } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import { db } from '../../services/FirebaseService';
-import PaymentMethodDialog from '../common/PaymentMethodDialog';
+import { buildWhatsAppUrl } from '../../constants/payment';
 import CourseLicenseAgreementDialog from './CourseLicenseAgreementDialog';
 import { isCourseNewish, isCourseUnseen, getSeenAt } from '../../services/WhatsNewService';
 
@@ -13,7 +13,6 @@ function CourseCard({ course, locked, onEdit, onDelete, onManageLessons, onManag
   const [lessonsCount, setLessonsCount] = useState(
     Number(course?.lessonsCount) || catalogLen || 0
   );
-  const [paymentOpen, setPaymentOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const showNew = isCourseNewish(course);
   const showUnseen = isCourseUnseen(course, getSeenAt());
@@ -149,17 +148,8 @@ function CourseCard({ course, locked, onEdit, onDelete, onManageLessons, onManag
         onClose={() => setLicenseOpen(false)}
         onAgree={() => {
           setLicenseOpen(false);
-          setPaymentOpen(true);
-        }}
-      />
-      <PaymentMethodDialog
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        item={{
-          title: course?.title,
-          price: course?.price,
-          category: course?.category,
-          hours: course?.hours,
+          const text = `مرحباً، أريد كوداً شخصياً لباقي فيديوهات الدورة:\n${course?.title || ''}`;
+          window.open(buildWhatsAppUrl(text), '_blank', 'noopener,noreferrer');
         }}
       />
     </Card>

@@ -30,7 +30,6 @@ import {
 } from '../../services/PrayerTimesService';
 import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
-import PaymentMethodDialog from './PaymentMethodDialog';
 import BookingCancelPolicy from './BookingCancelPolicy';
 import CancelBookingButton from './CancelBookingButton';
 import { useLanguage } from '../../context/LanguageContext';
@@ -58,9 +57,6 @@ export default function HourBookingScheduler() {
   const [selectedSlot, setSelectedSlot] = useState('');
   const [profile, setProfile] = useState({ name: '', email: '', phone: '' });
   const [saving, setSaving] = useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
-  const [paymentItem, setPaymentItem] = useState(null);
-  const [bookingId, setBookingId] = useState(null);
   const [salahWindows, setSalahWindows] = useState([]);
   const [salahNoticeOpen, setSalahNoticeOpen] = useState(false);
   const [pendingSalahPrayers, setPendingSalahPrayers] = useState([]);
@@ -338,22 +334,24 @@ export default function HourBookingScheduler() {
       } catch (mailErr) {
         console.warn('Owner booking email failed', mailErr);
       }
+      try {
+        await NotificationService.notifyStudentBookingConfirmed({
+          id: created.id,
+          studentName,
+          studentEmail,
+          date: `${selectedDay} ${selectedSlot}`,
+          duration,
+          hours: duration,
+          bookedBy: 'student',
+        });
+      } catch (mailErr) {
+        console.warn('Student booking email failed', mailErr);
+      }
 
-      setBookingId(created.id);
-      setPaymentItem({
-        title: `${payload.title} — ${selectedDay} ${selectedSlot} (${duration} ${t('ساعة', 'שעות')})`,
-        category: 'tutoring',
-        hours: duration,
-        bookingId: created.id,
-        studentName,
-        studentEmail,
-        studentPhone,
-      });
       setSaved(t(
-        `تم الحجز: ${selectedDay} الساعة ${selectedSlot}. يظهر في مواعيدي وعند المالك.`,
-        `ההזמנה נשמרה: ${selectedDay} בשעה ${selectedSlot}. מופיעה אצלך ואצל הבעלים.`
+        `تم الحجز: ${selectedDay} الساعة ${selectedSlot}. أُرسلت تفاصيل الحجز إلى بريد الطالبة وإلى بريدك، من معهد المعرفة.`,
+        `ההזמנה נשמרה: ${selectedDay} בשעה ${selectedSlot}. פרטי ההזמנה נשלחו למייל התלמידה ולמייל שלך, מ-MS Education.`
       ));
-      setPaymentOpen(true);
       setSelectedSlot('');
       setProfile({ name: studentName, email: studentEmail, phone: studentPhone });
     } catch (e) {
@@ -879,13 +877,6 @@ export default function HourBookingScheduler() {
           </Button>
         </DialogActions>
       </Dialog>
-
-      <PaymentMethodDialog
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        item={paymentItem}
-        bookingId={bookingId}
-      />
     </Box>
   );
 }

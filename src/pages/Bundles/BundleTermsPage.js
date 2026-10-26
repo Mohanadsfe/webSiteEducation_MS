@@ -7,7 +7,7 @@ import {
 import { ArrowBack, Gavel, PictureAsPdf } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/FirebaseService';
-import PaymentMethodDialog from '../../components/common/PaymentMethodDialog';
+import { buildWhatsAppUrl } from '../../constants/payment';
 import { useLanguage } from '../../context/LanguageContext';
 import {
   PLACEHOLDER_TERMS,
@@ -24,7 +24,6 @@ export default function BundleTermsPage() {
   const [loading, setLoading] = useState(true);
   const [agreed, setAgreed] = useState(false);
   const [readConfirm, setReadConfirm] = useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
   const [termsDocUrl, setTermsDocUrl] = useState(TERMS_DOC_URL);
 
   useEffect(() => {
@@ -75,14 +74,11 @@ export default function BundleTermsPage() {
   }
 
   const pricing = computePricing(bundle);
-  const canPay = agreed && readConfirm;
+  const canContinue = agreed && readConfirm;
 
-  const paymentItem = {
-    ...bundle,
-    title: bundle.title,
-    hours: bundle.hours,
-    price: pricing.finalPrice,
-    category: bundle.category,
+  const contactOwner = () => {
+    const text = `مرحباً، أوافق على شروط الرزمة وأريد إكمالها:\n${bundle.title || ''}`;
+    window.open(buildWhatsAppUrl(text), '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -284,25 +280,25 @@ export default function BundleTermsPage() {
             <Button
               variant="contained"
               size="large"
-              disabled={!canPay}
-              onClick={() => setPaymentOpen(true)}
+              disabled={!canContinue}
+              onClick={contactOwner}
               sx={{
                 flex: 1,
                 fontWeight: 900,
                 py: 1.4,
-                background: canPay
+                background: canContinue
                   ? 'linear-gradient(135deg, #1a6bb5, #1a9b8e)'
                   : undefined,
               }}
             >
-              {t('أوافق وأتابع للدفع', 'מסכים/ה וממשיך/ה לתשלום')}
+              {t('أوافق وأتواصل مع المالك', 'מסכים/ה ופונה לבעלים')}
             </Button>
             <Button variant="outlined" size="large" onClick={() => navigate('/bundles')}>
               {t('إلغاء', 'ביטול')}
             </Button>
           </Stack>
 
-          {!canPay && (
+          {!canContinue && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
               {t(
                 'فعّل خانتي التأكيد أعلاه للمتابعة',
@@ -320,12 +316,6 @@ export default function BundleTermsPage() {
           </Typography>
         )}
       </Container>
-
-      <PaymentMethodDialog
-        open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
-        item={paymentItem}
-      />
     </Box>
   );
 }

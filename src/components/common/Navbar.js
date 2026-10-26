@@ -4,10 +4,10 @@ import { MenuBook, EventNote, AutoAwesome } from '@mui/icons-material';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, collection } from 'firebase/firestore';
 import StudentExamsDialog from './StudentExamsDialog';
 import ExamsService from '../../services/ExamsService';
-import WhatsNewService, { getSeenAt } from '../../services/WhatsNewService';
+import WhatsNewService, { countUnseenCourses, getSeenAt } from '../../services/WhatsNewService';
 import { useLanguage } from '../../context/LanguageContext';
 import LanguageToggle from './LanguageToggle';
 import { isOwnerAdminEmail } from '../../constants/admin';
@@ -31,15 +31,54 @@ function Navbar() {
   const location = useLocation();
   const { t } = useLanguage();
 
-  const refreshCourseUpdatesBadge = async () => {
-    try {
-      const feed = await WhatsNewService.getFeed();
-      const n = WhatsNewService.countUnseenFeed(feed, getSeenAt());
-      setCourseUpdatesCount(n);
-    } catch {
-      setCourseUpdatesCount(0);
-    }
-  };
+  useEffect(() => {
+    let feedItems = [];
+    let courseDocs = [];
+    const recount = () => {
+      const seenAt = getSeenAt();
+      const feedCount = WhatsNewService.countUnseenFeed({ items: feedItems }, seenAt);
+      const courseCount = countUnseenCourses(courseDocs, seenAt);
+      setCourseUpdatesCount(Math.max(feedCount, courseCount));
+    };
+
+    const unsubFeed = onSnapshot(
+      doc(db, 'site_settings', 'whats_new'),
+      (snap) => {
+        feedItems = snap.exists() && Array.isArray(snap.data()?.items) ? snap.data().items : [];
+        recount();
+      },
+      () => recount()
+    );
+
+    let unsubCourses = () => {};
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      unsubCourses();
+      unsubCourses = () => {};
+      if (!user) {
+        courseDocs = [];
+        recount();
+        return;
+      }
+      unsubCourses = onSnapshot(
+        collection(db, 'courses'),
+        (snap) => {
+          courseDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          recount();
+        },
+        () => {}
+      );
+    });
+
+    const onSeen = () => recount();
+    window.addEventListener('ms-whats-new-seen', onSeen);
+    recount();
+    return () => {
+      unsubFeed();
+      unsubAuth();
+      unsubCourses();
+      window.removeEventListener('ms-whats-new-seen', onSeen);
+    };
+  }, [location.pathname]);
 
   useEffect(() => {
     let unsubExams = () => {};
@@ -73,7 +112,6 @@ function Navbar() {
           setRole('');
           setUpcomingExams(0);
         }
-        refreshCourseUpdatesBadge();
       } else {
         setIsLoggedIn(false);
         setUserName('');
@@ -81,7 +119,6 @@ function Navbar() {
         setUserId('');
         setUserEmail('');
         setUpcomingExams(0);
-        refreshCourseUpdatesBadge();
       }
     });
     return () => {
@@ -89,11 +126,6 @@ function Navbar() {
       unsubExams();
     };
   }, []);
-
-  // Refresh badge when leaving /courses (after updates were marked seen)
-  useEffect(() => {
-    refreshCourseUpdatesBadge();
-  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {

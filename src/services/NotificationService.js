@@ -52,23 +52,31 @@ export class NotificationService {
    * Notify owner Gmail(s) when a student books an hour.
    * Tries EmailJS first (if configured), then FormSubmit → owner Gmail.
    */
-  /** Notify student that the owner booked a specific hour for them */
-  static async notifyStudentOwnerAssignedBooking(booking) {
+  /**
+   * Email the student her confirmed lecture, from معهد المعرفة.
+   * bookedBy: 'student' (she booked) or 'owner' (the owner booked for her).
+   */
+  static async notifyStudentBookingConfirmed(booking = {}) {
     const toEmail = (booking.studentEmail || '').trim();
-    const subject = `تم حجز محاضرة لك — ${booking.date || ''}`;
+    const hours = booking.duration || booking.hours || 1;
+    const byOwner = booking.bookedBy === 'owner';
+    const subject = `معهد المعرفة — ${byOwner ? 'تم حجز محاضرة لك' : 'تأكيد حجزك'} ${booking.date || ''}`.trim();
     const message = [
-      'مرحباً،',
+      'معهد المعرفة — MS Education',
       '',
-      'قام المعلّم بحجز محاضرة خاصة لك في الموقع.',
+      `مرحباً ${booking.studentName || 'طالبنا'}،`,
       '',
-      `👤 ${booking.studentName || 'طالب'}`,
+      byOwner
+        ? 'قام معهد المعرفة بحجز محاضرة لك.'
+        : 'تم تأكيد حجز محاضرتك في معهد المعرفة.',
+      '',
       `📅 الموعد: ${booking.date || '—'}`,
-      `⏰ المدة: ${booking.duration || booking.hours || 1} ساعة`,
+      `⏰ المدة: ${hours} ساعة`,
       booking.note ? `📝 ملاحظة: ${booking.note}` : '',
+      booking.id ? `🆔 رقم الحجز: ${booking.id}` : '',
       '',
       'راجع صفحة «مواعيدي» في الموقع.',
-      '',
-      'سياسة الإلغاء: للإلغاء يُرجى ذلك قبل ٢٤ ساعة من الموعد، وإلا يبقى الحجز محتسباً.',
+      'للإلغاء من الموقع: قبل أكثر من ٢٤ ساعة من بدء المحاضرة. إذا بقي أقل من ذلك، تواصل مع المالك.',
       '',
       'معهد المعرفة',
     ].filter(Boolean).join('\n');
@@ -87,7 +95,7 @@ export class NotificationService {
             subject,
             message,
             appointment_date: booking.date || '',
-            from_name: 'معهد المعرفة / MS Education',
+            from_name: 'معهد المعرفة — MS Education',
             reply_to: 'mohanadsfe@gmail.com',
           },
           this.EMAILJS_USER_ID
@@ -95,7 +103,7 @@ export class NotificationService {
         results.emailjs = { success: true };
         results.success = true;
       } catch (e) {
-        console.error('EmailJS assigned booking failed', e);
+        console.error('EmailJS student booking failed', e);
       }
     }
 
@@ -108,18 +116,24 @@ export class NotificationService {
         },
         body: JSON.stringify({
           _subject: subject,
-          name: 'معهد المعرفة',
+          name: 'معهد المعرفة — MS Education',
           email: 'mohanadsfe@gmail.com',
           message,
           _template: 'table',
+          _captcha: 'false',
         }),
       });
       results.formSubmit = { success: res.ok };
       if (res.ok) results.success = true;
     } catch (e) {
-      console.error('FormSubmit assigned booking failed', e);
+      console.error('Student booking email failed', e);
     }
     return results;
+  }
+
+  /** Notify student that the owner booked a specific hour for them */
+  static async notifyStudentOwnerAssignedBooking(booking) {
+    return this.notifyStudentBookingConfirmed({ ...booking, bookedBy: 'owner' });
   }
 
   static async notifyOwnerOfBooking(booking) {

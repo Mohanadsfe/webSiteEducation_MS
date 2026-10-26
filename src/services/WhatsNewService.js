@@ -33,6 +33,11 @@ export function markUpdatesSeen(at = Date.now()) {
   } catch {
     /* ignore */
   }
+  try {
+    window.dispatchEvent(new Event('ms-whats-new-seen'));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function courseActivityMs(course) {
