@@ -125,6 +125,7 @@ function selectSmsJobs(appointments, nowInput) {
         id: appt.id,
         studentId,
         kind: 'day_before',
+        when: start.format('YYYY-MM-DD HH:mm'),
         body: dayBeforeText(appt, start),
       });
     }
@@ -134,6 +135,7 @@ function selectSmsJobs(appointments, nowInput) {
         id: appt.id,
         studentId,
         kind: 'hours3',
+        when: start.format('YYYY-MM-DD HH:mm'),
         body: hours3Text(appt, start, minutesLeft),
       });
     }

@@ -1,1 +1,0 @@
-export const WEB_PUSH_PUBLIC_KEY = "BNc-LzSa0yVxqC2pPS6avMxzVeS3YdkqNZ14m9L9iyEDdJe37H68HPVjgDU0quOI7oq-sj5_XQsYz4QwzcjO0BY";

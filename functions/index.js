@@ -1,10 +1,10 @@
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { defineString } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
-const { sendWebPush } = require('./push');
+const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
 
 const OWNER_EMAILS = new Set([
   'safi89099@gmail.com',
@@ -13,58 +13,64 @@ const OWNER_EMAILS = new Set([
 
 initializeApp();
 
-const pushPublic = defineString('WEB_PUSH_PUBLIC_KEY', { default: '' });
-const pushPrivate = defineString('WEB_PUSH_PRIVATE_KEY', { default: '' });
-const pushSubject = defineString('WEB_PUSH_SUBJECT', { default: 'mailto:mohanadsfe@gmail.com' });
-
 const FLAG = {
   day_before: 'reminderDayBeforeCloudSent',
   hours3: 'reminderHours3CloudSent',
 };
 
-function pushCredentials() {
-  return {
-    publicKey: pushPublic.value(),
-    privateKey: pushPrivate.value(),
-    subject: pushSubject.value(),
-  };
+async function loadStudentTokens(studentId) {
+  const snap = await getFirestore()
+    .collection('users')
+    .doc(studentId)
+    .collection('fcmTokens')
+    .get();
+  return tokensFromDocs(snap.docs.map((row) => ({
+    id: row.id,
+    token: row.get('token'),
+  })));
 }
 
-async function deliverToStudent(studentId, body) {
+async function deleteStaleTokens(studentId, ids) {
+  if (!ids.length) return;
   const db = getFirestore();
-  const title = 'معهد المعرفة';
+  const batch = db.batch();
+  ids.forEach((id) => {
+    batch.delete(db.collection('users').doc(studentId).collection('fcmTokens').doc(id));
+  });
+  await batch.commit();
+}
+
+async function deliverToStudent(studentId, message) {
+  const db = getFirestore();
   await db.collection('notifications').add({
     userId: studentId,
-    title,
-    body,
+    title: message.title,
+    body: message.body,
     read: false,
-    url: '/my-bookings',
+    url: message.data.url || '/my-bookings',
+    bookingId: message.data.bookingId || '',
+    kind: message.data.kind || '',
     createdAt: new Date(),
   });
 
-  const user = await db.collection('users').doc(studentId).get();
-  const subs = user.exists && Array.isArray(user.get('pushSubscriptions'))
-    ? user.get('pushSubscriptions')
-    : [];
-  const credentials = pushCredentials();
-  const dead = [];
-  let pushed = 0;
-  for (const sub of subs) {
-    const result = await sendWebPush(sub, { title, body, url: '/my-bookings' }, credentials);
-    if (result.ok) {
-      pushed += 1;
-    } else if (result.statusCode === 404 || result.statusCode === 410) {
-      dead.push(sub);
-    } else if (result.error && result.error !== 'missing web push keys') {
-      console.error('Push failed', studentId, result.statusCode || '', result.error);
+  const tokens = await loadStudentTokens(studentId);
+  let result = { pushed: 0, staleIds: [], failed: 0 };
+  if (tokens.length) {
+    try {
+      result = await sendToTokens(getMessaging(), tokens, message);
+    } catch (e) {
+      console.error('FCM batch failed', message.data.bookingId || '', e.code || 'send-failed');
+      result = { pushed: 0, staleIds: [], failed: tokens.length };
     }
   }
-  if (dead.length) {
-    await db.collection('users').doc(studentId).update({
-      pushSubscriptions: FieldValue.arrayRemove(...dead),
-    });
+  if (result.staleIds.length) {
+    try {
+      await deleteStaleTokens(studentId, result.staleIds);
+    } catch (e) {
+      console.error('FCM token cleanup failed', message.data.bookingId || '', e.code || 'cleanup-failed');
+    }
   }
-  return { stored: true, pushed };
+  return { stored: true, pushed: result.pushed, failed: result.failed };
 }
 
 /** Owner/teacher sends one lecture notice to a chosen student. */
@@ -99,7 +105,7 @@ exports.sendStudentSms = onCall(
       throw new HttpsError('invalid-argument', 'اكتب رسالة قصيرة');
     }
 
-    const result = await deliverToStudent(studentId, message);
+    const result = await deliverToStudent(studentId, noticeMessage(message));
     return { ok: true, pushed: result.pushed };
   }
 );
@@ -108,7 +114,7 @@ exports.sendStudentSms = onCall(
  * Every 15 minutes, with no click:
  * 1) The day before the lecture (from 08:00, Asia/Jerusalem)
  * 2) About 3 hours before the lecture starts
- * Saved in the site, and pushed to the phone if the student allowed notifications.
+ * Saved in the site, and pushed with Firebase Cloud Messaging if the student allowed notifications.
  */
 exports.sendLectureSmsReminders = onSchedule(
   {
@@ -150,8 +156,8 @@ exports.sendLectureSmsReminders = onSchedule(
       if (!claimed) continue;
 
       try {
-        const result = await deliverToStudent(job.studentId, job.body);
-        console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed);
+        const result = await deliverToStudent(job.studentId, reminderMessage(job));
+        console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed, 'failed', result.failed);
       } catch (e) {
         console.error('Reminder failed', job.id, job.kind, e.message);
         await ref.update({
