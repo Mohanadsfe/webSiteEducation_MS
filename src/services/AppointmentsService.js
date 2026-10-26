@@ -292,7 +292,11 @@ export class AppointmentsService {
 
   static async markReminderSent(bookingId, kind) {
     let patch;
-    if (kind === 'hours3' || kind === 'hours5') {
+    if (kind === 'hours36') {
+      patch = { reminderDayBeforeSent: true, reminderDayBeforeSentAt: new Date() };
+    } else if (kind === 'hours30') {
+      patch = { reminderMorningSent: true, reminderMorningSentAt: new Date() };
+    } else if (kind === 'hours3' || kind === 'hours5') {
       // Same stored flag as the old 5-hour reminder (Firestore student rules allow it).
       patch = { reminderHours5Sent: true, reminderHours5SentAt: new Date() };
     } else if (kind === 'sms_hours3' || kind === 'sms_hours5') {

@@ -36,7 +36,7 @@ import {
 import { isOwnerAdminEmail } from '../../constants/admin';
 import { useLanguage } from '../../context/LanguageContext';
 import NotificationService from '../../services/NotificationService';
-import { sendStudentNotice, noticeErrorText } from '../../services/SmsService';
+import { sendStudentNotice, sendNoticeToAllStudents, noticeErrorText } from '../../services/SmsService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
 import {
   buildStudentLectureReminderMessage,
@@ -60,6 +60,7 @@ export default function BookingManagePage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [allowed, setAllowed] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingHours, setSavingHours] = useState(false);
   const [error, setError] = useState('');
@@ -138,6 +139,7 @@ export default function BookingManagePage() {
         return;
       }
       setActorUid(user.uid);
+      setIsOwner(isOwnerAdminEmail(user.email));
       const profile = await UsersService.getUser(user.uid);
       if (!canManage(user, profile)) {
         setAllowed(false);
@@ -620,6 +622,39 @@ export default function BookingManagePage() {
     } finally {
       setSmsSending(false);
       setSmsBookingId('');
+    }
+  };
+
+  const sendAllNotices = async () => {
+    const text = smsText.trim();
+    if (!isOwner) return;
+    if (!text) {
+      setError(t('اكتب الرسالة', 'כתבו הודעה'));
+      return;
+    }
+    if (!students.length) {
+      setError(t('لا يوجد طلاب', 'אין תלמידים'));
+      return;
+    }
+    const agreed = window.confirm(t(
+      `إرسال هذه الرسالة إلى كل الطلاب (${students.length})؟`,
+      `לשלוח הודעה זו לכל התלמידים (${students.length})?`
+    ));
+    if (!agreed) return;
+    setSmsSending(true);
+    setError('');
+    try {
+      const result = await sendNoticeToAllStudents(text);
+      const count = Number(result?.sent || 0);
+      setOk(t(
+        `تم إرسال الإشعار إلى ${count} طالب`,
+        `ההתראה נשלחה ל-${count} תלמידים`
+      ));
+      setSmsText('');
+    } catch (e) {
+      setError(noticeErrorText(e));
+    } finally {
+      setSmsSending(false);
     }
   };
 
@@ -1419,17 +1454,18 @@ export default function BookingManagePage() {
         </Stack>
       </Paper>
 
+      {isOwner && (
       <Paper sx={{ p: 2, mb: 2, borderRadius: 3 }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
           <Notifications color="primary" />
           <Typography fontWeight={900}>
-            {t('إشعار لطالب محدد', 'התראה לתלמיד מסוים')}
+            {t('إشعار للطلاب', 'התראה לתלמידים')}
           </Typography>
         </Stack>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t(
-            'اختر الطالب، اكتب الرسالة، ثم اضغط إرسال مرة واحدة. تصل داخل الموقع وعلى جهازه إذا سمح بالإشعارات.',
-            'בחרו תלמיד, כתבו הודעה, ולחצו שליחה פעם אחת. מגיעה באתר ובמכשיר אם אישר התראות.'
+            'المالك فقط: اكتب الرسالة، ثم أرسلها لطالب واحد أو لكل الطلاب بضغطة. تصل داخل الموقع، وعلى الجهاز إذا سمح الطالب بالإشعارات.',
+            'הבעלים בלבד: כתבו הודעה, ואז שלחו לתלמיד אחד או לכל התלמידים בלחיצה. מגיעה באתר, ובמכשיר אם התלמיד אישר התראות.'
           )}
         </Typography>
         <Stack spacing={1.5}>
@@ -1442,7 +1478,7 @@ export default function BookingManagePage() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label={t('الطالب', 'התלמיד')}
+                label={t('طالب واحد', 'תלמיד אחד')}
                 placeholder={t('اسم أو بريد', 'שם או אימייל')}
               />
             )}
@@ -1461,17 +1497,29 @@ export default function BookingManagePage() {
             fullWidth
             inputProps={{ maxLength: 480 }}
           />
-          <Button
-            variant="contained"
-            startIcon={smsSending ? <CircularProgress size={16} color="inherit" /> : <Notifications />}
-            disabled={smsSending || !smsStudent || !smsText.trim()}
-            onClick={() => sendOneNotice(smsStudent?.id, smsText)}
-            sx={{ fontWeight: 900, alignSelf: 'flex-start' }}
-          >
-            {t('إرسال', 'שליחה')}
-          </Button>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button
+              variant="contained"
+              startIcon={smsSending ? <CircularProgress size={16} color="inherit" /> : <Notifications />}
+              disabled={smsSending || !smsStudent || !smsText.trim()}
+              onClick={() => sendOneNotice(smsStudent?.id, smsText)}
+              sx={{ fontWeight: 900 }}
+            >
+              {t('إرسال لهذا الطالب', 'שליחה לתלמיד זה')}
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={smsSending ? <CircularProgress size={16} /> : <Notifications />}
+              disabled={smsSending || !smsText.trim() || students.length === 0}
+              onClick={sendAllNotices}
+              sx={{ fontWeight: 900 }}
+            >
+              {t(`إرسال لكل الطلاب (${students.length})`, `שליחה לכל התלמידים (${students.length})`)}
+            </Button>
+          </Stack>
         </Stack>
       </Paper>
+      )}
 
       {/* Bookings search + pretty cards */}
       <Paper
@@ -1789,6 +1837,7 @@ export default function BookingManagePage() {
                       >
                         <WhatsApp />
                       </IconButton>
+                      {isOwner && (
                       <IconButton
                         color="primary"
                         disabled={smsBookingId === b.id}
@@ -1806,6 +1855,7 @@ export default function BookingManagePage() {
                           ? <CircularProgress size={18} />
                           : <Notifications />}
                       </IconButton>
+                      )}
                       <IconButton
                         color="info"
                         onClick={() => {

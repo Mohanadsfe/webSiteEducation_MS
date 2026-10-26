@@ -14,7 +14,8 @@ const OWNER_EMAILS = new Set([
 initializeApp();
 
 const FLAG = {
-  day_before: 'reminderDayBeforeCloudSent',
+  hours36: 'reminderHours36CloudSent',
+  hours30: 'reminderHours30CloudSent',
   hours3: 'reminderHours3CloudSent',
 };
 
@@ -73,47 +74,72 @@ async function deliverToStudent(studentId, message) {
   return { stored: true, pushed: result.pushed, failed: result.failed };
 }
 
-/** Owner/teacher sends one lecture notice to a chosen student. */
+/** Owner sends one notice to a chosen student, or the same notice to every student. */
 exports.sendStudentSms = onCall(
   {
     region: 'europe-west1',
     cors: true,
     invoker: 'public',
-    timeoutSeconds: 30,
+    timeoutSeconds: 120,
+    memory: '256MiB',
   },
   async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول');
     }
-
     const email = String(request.auth.token.email || '').toLowerCase();
-    let allowed = OWNER_EMAILS.has(email);
-    if (!allowed) {
-      const profile = await getFirestore().collection('users').doc(request.auth.uid).get();
-      allowed = profile.exists && profile.get('role') === 'teacher';
-    }
-    if (!allowed) {
+    if (!OWNER_EMAILS.has(email)) {
       throw new HttpsError('permission-denied', 'الإرسال للمالك فقط');
     }
 
     const message = String(request.data?.message || '').trim();
     const studentId = String(request.data?.studentId || '').trim();
-    if (!studentId) {
-      throw new HttpsError('invalid-argument', 'اختر طالباً');
-    }
+    const all = request.data?.all === true;
     if (!message || message.length > 480) {
       throw new HttpsError('invalid-argument', 'اكتب رسالة قصيرة');
     }
+    if (!all && !studentId) {
+      throw new HttpsError('invalid-argument', 'اختر طالباً');
+    }
 
-    const result = await deliverToStudent(studentId, noticeMessage(message));
-    return { ok: true, pushed: result.pushed };
+    const notice = noticeMessage(message);
+    if (!all) {
+      const result = await deliverToStudent(studentId, notice);
+      return { ok: true, sent: 1, pushed: result.pushed, failed: result.failed };
+    }
+
+    const snap = await getFirestore().collection('users').where('role', '==', 'student').get();
+    const ids = snap.docs.map((row) => row.id).filter(Boolean);
+    let sent = 0;
+    let pushed = 0;
+    let failed = 0;
+    const size = 8;
+    for (let i = 0; i < ids.length; i += size) {
+      const chunk = ids.slice(i, i + size);
+      const results = await Promise.all(chunk.map(async (id) => {
+        try {
+          return await deliverToStudent(id, notice);
+        } catch (e) {
+          console.error('Notice failed', e.code || 'send-failed');
+          return { pushed: 0, failed: 1 };
+        }
+      }));
+      results.forEach((result) => {
+        sent += 1;
+        pushed += result.pushed || 0;
+        failed += result.failed || 0;
+      });
+    }
+    console.log('Owner notice', 'students', sent, 'pushed', pushed, 'failed', failed);
+    return { ok: true, sent, pushed, failed };
   }
 );
 
 /**
- * Every 15 minutes, with no click:
- * 1) The day before the lecture (from 08:00, Asia/Jerusalem)
- * 2) About 3 hours before the lecture starts
+ * Every 15 minutes, with no click. Each lesson is notified three times:
+ * 1) About 36 hours before it starts
+ * 2) About 30 hours before it starts
+ * 3) About 3 hours before it starts
  * Saved in the site, and pushed with Firebase Cloud Messaging if the student allowed notifications.
  */
 exports.sendLectureSmsReminders = onSchedule(

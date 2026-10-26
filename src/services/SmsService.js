@@ -1,11 +1,20 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth } from './FirebaseService';
 
-/** Owner sends one lecture notice through the Cloud Function. */
-export async function sendStudentNotice(studentId, message) {
+function noticeCallable() {
   const functions = getFunctions(auth.app, 'europe-west1');
-  const send = httpsCallable(functions, 'sendStudentSms');
-  const res = await send({ studentId, message });
+  return httpsCallable(functions, 'sendStudentSms');
+}
+
+/** Owner sends one notice to a chosen student. */
+export async function sendStudentNotice(studentId, message) {
+  const res = await noticeCallable()({ studentId, message });
+  return res.data;
+}
+
+/** Owner sends the same notice to every student account. */
+export async function sendNoticeToAllStudents(message) {
+  const res = await noticeCallable()({ all: true, message });
   return res.data;
 }
 

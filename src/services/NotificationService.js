@@ -207,7 +207,7 @@ export class NotificationService {
 
   /**
    * Email the student a lecture reminder.
-   * kind: 'day_before' | 'hours3' | 'hours5' (legacy) | 'morning' (legacy)
+   * kind: 'hours36' | 'hours30' | 'hours3' | 'day_before' | 'hours5' (legacy) | 'morning' (legacy)
    */
   static async notifyStudentBookingReminder(booking, kind = 'day_before') {
     const toEmail = (booking.studentEmail || '').trim();
@@ -215,13 +215,19 @@ export class NotificationService {
       return { success: false, message: 'no student email' };
     }
 
-    const sameDay = kind === 'hours3' || kind === 'hours5' || kind === 'morning';
-    const when = sameDay
-      ? 'تذكير: محاضرتك اليوم بعد حوالي ٣ ساعات / Reminder: your lecture is in about 3 hours'
+    const lead = kind === 'hours36'
+      ? ['٣٦', '36']
+      : kind === 'hours30'
+        ? ['٣٠', '30']
+        : (kind === 'hours3' || kind === 'hours5' || kind === 'morning')
+          ? ['٣', '3']
+          : null;
+    const when = lead
+      ? `تذكير: محاضرتك بعد حوالي ${lead[0]} ساعة / Reminder: your lecture is in about ${lead[1]} hours`
       : 'تذكير: محاضرتك غداً / Reminder: your lecture is tomorrow';
 
-    const subject = sameDay
-      ? `تذكير — محاضرتك بعد ٣ ساعات تقريباً ${booking.date || ''}`
+    const subject = lead
+      ? `تذكير — محاضرتك بعد حوالي ${lead[0]} ساعة ${booking.date || ''}`
       : `تذكير — محاضرتك غداً ${booking.date || ''}`;
 
     const message = [

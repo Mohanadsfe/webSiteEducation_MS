@@ -41,37 +41,39 @@ function isActiveBooking(appt) {
 }
 
 /**
- * On-site + email while the student has the site open.
- * SMS itself is sent by the scheduled Cloud Function (no click).
- * 1) Day before the lecture
- * 2) From 3 hours before the lecture until it starts
+ * On-site notice while the student has the site open.
+ * The scheduled Cloud Function sends the same three reminders with no click:
+ * about 36 hours before, about 30 hours before, and about 3 hours before.
  */
+function reminderKind(appt, now) {
+  const start = parseAppointmentStart(appt);
+  if (!start) return null;
+  const minutesLeft = start.diff(now, 'minute');
+  if (minutesLeft <= 0) return null;
+  if (minutesLeft <= 3 * 60) {
+    if (appt.reminderHours5Sent || appt.reminderHours3Sent || localSeen(appt.id, 'hours3') || localSeen(appt.id, 'hours5')) {
+      return null;
+    }
+    return 'hours3';
+  }
+  if (minutesLeft <= 30 * 60) {
+    if (appt.reminderMorningSent || localSeen(appt.id, 'hours30')) return null;
+    return 'hours30';
+  }
+  if (minutesLeft <= 36 * 60) {
+    if (appt.reminderDayBeforeSent || localSeen(appt.id, 'hours36') || localSeen(appt.id, 'day_before')) {
+      return null;
+    }
+    return 'hours36';
+  }
+  return null;
+}
+
 function pickReminder(list) {
   const now = dayjs();
-  const tomorrow = now.add(1, 'day').format('YYYY-MM-DD');
-
-  const hours3 = list.find((a) => {
-    if (!isActiveBooking(a)) return false;
-    const start = parseAppointmentStart(a);
-    if (!start) return false;
-    if (a.reminderHours5Sent || a.reminderHours3Sent || localSeen(a.id, 'hours3') || localSeen(a.id, 'hours5')) {
-      return false;
-    }
-    const windowStart = start.subtract(3, 'hour');
-    return (now.isAfter(windowStart) || now.isSame(windowStart)) && now.isBefore(start);
-  });
-  if (hours3) return { booking: hours3, kind: 'hours3' };
-
-  const dayBefore = list.find((a) => {
-    if (!isActiveBooking(a)) return false;
-    const start = parseAppointmentStart(a);
-    if (!start || start.format('YYYY-MM-DD') !== tomorrow) return false;
-    if (a.reminderDayBeforeSent || localSeen(a.id, 'day_before')) return false;
-    return true;
-  });
-  if (dayBefore) return { booking: dayBefore, kind: 'day_before' };
-
-  return null;
+  const hit = list.find((appt) => isActiveBooking(appt) && reminderKind(appt, now));
+  if (!hit) return null;
+  return { booking: hit, kind: reminderKind(hit, now) };
 }
 
 function showBrowserNotification(title, body) {
@@ -114,14 +116,11 @@ export default function BookingReminder() {
         const start = parseAppointmentStart(booking);
         const when = start ? start.format('YYYY-MM-DD HH:mm') : (booking.date || '');
 
-        const ttl = kind === 'hours3'
-          ? 'تذكير — محاضرتك بعد ٣ ساعات تقريباً'
-          : 'تذكير — محاضرتك غداً';
-        const msg = kind === 'hours3'
-          ? `مرحباً! محاضرتك اليوم الساعة ${start ? start.format('HH:mm') : ''} (${booking.duration || booking.hours || 1} ساعة). نتمنى لك درساً موفقاً.\n\nللإلغاء: قبل ٢٤ ساعة من الموعد — وإلا يبقى الحجز محتسباً.`
-          : `تذكير: لديك محاضرة غداً ${when}. حضّر نفسك — معهد المعرفة.\n\nللإلغاء: قبل ٢٤ ساعة من الموعد — وإلا يبقى الحجز محتسباً.`;
+        const lead = kind === 'hours36' ? '٣٦' : kind === 'hours30' ? '٣٠' : '٣';
+        const ttl = `تذكير — محاضرتك بعد حوالي ${lead} ساعة`;
+        const msg = `مرحباً! محاضرتك ${when} (${booking.duration || booking.hours || 1} ساعة)، بعد حوالي ${lead} ساعة.\n\nمعهد المعرفة.`;
 
-        markLocalSeen(booking.id, kind === 'hours3' ? 'hours3' : 'day_before');
+        markLocalSeen(booking.id, kind);
         try {
           await AppointmentsService.markReminderSent(booking.id, kind);
         } catch (e) {
