@@ -2,9 +2,11 @@ import { deleteField, doc, setDoc } from 'firebase/firestore';
 import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 import { app, db } from '../firebaseConfig';
 
-/** Public Web Push certificate from Firebase Console. Never put a private key here. */
+/** Public Web Push certificate. The private key stays in Firebase. */
+const FIREBASE_VAPID_KEY = 'BPIMAC5zBs0g7TnmeIXXQFwzG_zCIIWXego_DVfaaNghkAGoLCGA915ZJ3vg9zV58sRkNhn9giIFdhDMD5m_RSc';
+
 export function vapidKey() {
-  return String(process.env.REACT_APP_FIREBASE_VAPID_KEY || '').trim();
+  return String(process.env.REACT_APP_FIREBASE_VAPID_KEY || FIREBASE_VAPID_KEY).trim();
 }
 
 export function isIosDevice() {

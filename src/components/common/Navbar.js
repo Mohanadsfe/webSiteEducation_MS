@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AppBar, Toolbar, Typography, Button, Box, Tooltip, Badge, Chip, keyframes } from '@mui/material';
-import { MenuBook, EventNote, AutoAwesome } from '@mui/icons-material';
+import { AppBar, Toolbar, Typography, Button, Box, Tooltip, Badge, Chip, Drawer, IconButton, keyframes, useMediaQuery } from '@mui/material';
+import { MenuBook, EventNote, AutoAwesome, Menu as MenuIcon } from '@mui/icons-material';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -27,6 +27,8 @@ function Navbar() {
   const [upcomingExams, setUpcomingExams] = useState(0);
   const [examsOpen, setExamsOpen] = useState(false);
   const [courseUpdatesCount, setCourseUpdatesCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const phone = useMediaQuery('(max-width:899px)');
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLanguage();
@@ -127,6 +129,10 @@ function Navbar() {
     };
   }, []);
 
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -200,7 +206,7 @@ function Navbar() {
                   onClick={() => setExamsOpen(true)}
                   aria-label={t('بيانات الامتحانات', 'נתוני מבחנים')}
                   sx={{
-                    display: 'flex',
+                    display: { xs: 'none', md: 'flex' },
                     alignItems: 'center',
                     gap: 1,
                     pl: 0.75,
@@ -261,7 +267,7 @@ function Navbar() {
 
           <Box
             sx={{
-              display: 'flex',
+              display: { xs: 'none', md: 'flex' },
               alignItems: 'center',
               gap: '0.5rem',
               flexDirection: 'row-reverse',
@@ -400,13 +406,23 @@ function Navbar() {
           </Box>
           </Box>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {phone && (
+              <IconButton
+                color="inherit"
+                aria-label={t('القائمة', 'תפריט')}
+                onClick={() => setMenuOpen(true)}
+                sx={{ bgcolor: 'rgba(255,255,255,0.16)' }}
+              >
+                <MenuIcon />
+              </IconButton>
+            )}
             <LanguageToggle />
             {isLoggedIn && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                 <Typography
                   variant="subtitle1"
-                  sx={{ fontWeight: 800, letterSpacing: 0.2 }}
+                  sx={{ fontWeight: 800, letterSpacing: 0.2, display: { xs: 'none', sm: 'block' }, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
                   👋 {t('مرحباً', 'שלום')} {userName}
                 </Typography>
@@ -430,6 +446,65 @@ function Navbar() {
           </Box>
         </Toolbar>
       </AppBar>
+
+      <Drawer
+        anchor="right"
+        open={phone && menuOpen}
+        onClose={() => setMenuOpen(false)}
+        PaperProps={{
+          sx: {
+            width: 'min(100vw, 320px)',
+            direction: 'rtl',
+            p: 2,
+            pt: 3,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            bgcolor: '#f7fbff',
+          },
+        }}
+      >
+        <Typography sx={{ fontWeight: 900, color: '#0b3d5c', mb: 1 }}>
+          {t('القائمة', 'תפריט')}
+        </Typography>
+        {[
+          ['/', t('الصفحة الرئيسية', 'דף הבית')],
+          ['/bundles', t('الرزمات', 'חבילות')],
+          ['/courses', t('الدورات', 'קורסים')],
+          ['/my-bookings', t('مواعيدي', 'התורים שלי')],
+          ['/contact', t('اتصل بنا', 'צור קשר')],
+          ['/about', t('من نحن؟', 'מי אנחנו?')],
+          ['/me#settings', t('اعدادات', 'הגדרות')],
+        ].filter((item) => item[0] !== '/my-bookings' && item[0] !== '/me#settings' ? true : isLoggedIn).map(([to, label]) => (
+          <Button key={to} component={Link} to={to} onClick={() => setMenuOpen(false)} sx={{ justifyContent: 'flex-start', fontWeight: 800, color: '#0b3d5c' }}>
+            {label}
+          </Button>
+        ))}
+        {isLoggedIn && role === 'student' && (
+          <>
+            <Button component={Link} to="/me" onClick={() => setMenuOpen(false)} sx={{ justifyContent: 'flex-start', fontWeight: 800, color: '#0b3d5c' }}>
+              {t('حسابي', 'החשבון שלי')}
+            </Button>
+            <Button onClick={() => { setMenuOpen(false); setExamsOpen(true); }} sx={{ justifyContent: 'flex-start', fontWeight: 800, color: '#0b3d5c' }}>
+              {t('امتحاناتي', 'המבחנים שלי')}
+            </Button>
+          </>
+        )}
+        {isLoggedIn && (role === 'teacher' || isOwnerAdminEmail(userEmail)) && (
+          <Button component={Link} to="/booking-manage" onClick={() => setMenuOpen(false)} sx={{ justifyContent: 'flex-start', fontWeight: 800, color: '#0b3d5c' }}>
+            {t('إدارة الحجوزات', 'ניהול הזמנות')}
+          </Button>
+        )}
+        {isLoggedIn ? (
+          <Button color="error" onClick={handleLogout} sx={{ justifyContent: 'flex-start', fontWeight: 800 }}>
+            {t('تسجيل الخروج', 'התנתקות')}
+          </Button>
+        ) : (
+          <Button component={Link} to="/login" onClick={() => setMenuOpen(false)} sx={{ justifyContent: 'flex-start', fontWeight: 800 }}>
+            {t('تسجيل الدخول', 'התחברות')}
+          </Button>
+        )}
+      </Drawer>
 
       <StudentExamsDialog
         open={examsOpen}

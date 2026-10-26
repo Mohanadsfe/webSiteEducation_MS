@@ -180,5 +180,19 @@
 @media (max-width: 900px) {
   .homepage {
     background-attachment: scroll;
+    padding: 0.75rem;
+  }
+
+  .hero {
+    min-height: 0;
+    padding: 2rem 1rem;
+    border-radius: 18px;
+  }
+
+  .homepage-container,
+  .calendar-section,
+  .opinions-section {
+    padding: 1rem;
+    border-radius: 16px;
   }
 }

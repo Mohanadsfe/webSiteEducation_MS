@@ -12,6 +12,11 @@
   --ms-shadow: 0 18px 44px rgba(11, 61, 92, 0.12);
 }
 
+html, body, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   font-family: 'Segoe UI', Tahoma, Arial, sans-serif;

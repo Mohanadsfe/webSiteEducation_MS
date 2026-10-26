@@ -81,7 +81,7 @@ export default function EnableBookingNotifications() {
         variant="contained"
         color={enabled || status === 'on' ? 'success' : 'primary'}
         startIcon={<NotificationsActiveIcon />}
-        disabled={busy || support === 'unsupported' || support === 'insecure' || support === 'ios-home-screen' || support === 'missing-config'}
+        disabled={busy || support === 'unsupported' || support === 'insecure' || support === 'ios-home-screen'}
         onClick={onEnable}
         sx={{ fontWeight: 900, borderRadius: 2, alignSelf: 'flex-start' }}
       >
@@ -116,14 +116,6 @@ export default function EnableBookingNotifications() {
           {t(
             'الإشعارات تعمل على الموقع المنشور أو على localhost فقط.',
             'התראות עובדות באתר המפורסם או ב-localhost בלבד.'
-          )}
-        </Alert>
-      )}
-      {(support === 'missing-config' || status === 'missing-config') && (
-        <Alert severity="warning">
-          {t(
-            'مفتاح Web Push غير موجود بعد. من Firebase Console: Project settings ثم Cloud Messaging ثم Web configuration ثم Web Push certificates ثم Generate key pair. انسخ المفتاح العام إلى ملف .env في جذر المشروع بالسطر REACT_APP_FIREBASE_VAPID_KEY= ثم أعد تشغيل الموقع. لا تضع المفتاح الخاص في الموقع.',
-            'מפתח Web Push עדיין חסר. ב-Firebase Console: Project settings, אחר כך Cloud Messaging, Web configuration, Web Push certificates, Generate key pair. העתיקו את המפתח הציבורי לקובץ .env בשורש הפרויקט בשורה REACT_APP_FIREBASE_VAPID_KEY= והפעילו מחדש. אל תשימו את המפתח הפרטי באתר.'
           )}
         </Alert>
       )}
