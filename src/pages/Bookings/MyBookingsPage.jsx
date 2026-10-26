@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Container, Typography, Box, Stack, Button, CircularProgress, Alert, ToggleButton, ToggleButtonGroup, IconButton,
-  Dialog, DialogTitle, DialogContent, DialogActions
+  Container, Typography, Box, Stack, Button, CircularProgress, Alert, ToggleButton, ToggleButtonGroup, IconButton
 } from '@mui/material';
 import {
   EventNote, ArrowBack, AccessTime, Person, Phone, Email, CalendarMonth, Add, Delete
@@ -14,9 +13,8 @@ import AppointmentsService, {
   BOOKING_RETENTION_DAYS,
   daysUntilExpiry,
   parseAppointmentStart,
-  studentCanCancelBooking,
 } from '../../services/AppointmentsService';
-import { buildWhatsAppUrl } from '../../constants/payment';
+import CancelBookingButton from '../../components/common/CancelBookingButton';
 import { isOwnerAdminEmail } from '../../constants/admin';
 import { useLanguage } from '../../context/LanguageContext';
 import UsersService from '../../services/UsersService';
@@ -39,7 +37,7 @@ function statusMeta(status, t) {
   };
 }
 
-function BookingCard({ booking, isOwner, t, onDelete, onStudentCancel }) {
+function BookingCard({ booking, isOwner, t, onDelete }) {
   const start = parseAppointmentStart(booking);
   const left = daysUntilExpiry(booking);
   const status = statusMeta(booking.status, t);
@@ -129,15 +127,8 @@ function BookingCard({ booking, isOwner, t, onDelete, onStudentCancel }) {
           )}
         </Stack>
 
-        {!isOwner && onStudentCancel && (
-          <Button
-            color="error"
-            size="small"
-            onClick={() => onStudentCancel(booking)}
-            sx={{ mt: 1.25, fontWeight: 800 }}
-          >
-            {t('إلغاء الحجز', 'ביטול ההזמנה')}
-          </Button>
+        {!isOwner && (
+          <CancelBookingButton booking={booking} />
         )}
 
         {isOwner && (
@@ -195,33 +186,9 @@ export default function MyBookingsPage() {
   const [error, setError] = useState('');
   const [isOwner, setIsOwner] = useState(false);
   const [filter, setFilter] = useState('upcoming');
-  const [lateCancel, setLateCancel] = useState(null);
 
-  const requestStudentCancel = (booking) => {
-    if (!studentCanCancelBooking(booking)) {
-      setLateCancel(booking);
-      return;
-    }
-    if (!window.confirm(t(
-      'إلغاء هذا الحجز؟ ستعود الساعة متاحة في الجدول.',
-      'לבטל הזמנה זו? השעה תחזור ללוח.'
-    ))) return;
-    deleteBookingNow(booking.id, true);
-  };
-
-  const openOwnerWhatsApp = () => {
-    const start = lateCancel ? parseAppointmentStart(lateCancel) : null;
-    const when = start ? start.format('YYYY-MM-DD HH:mm') : '';
-    const message = t(
-      `مرحباً، أحتاج إلغاء حجزي${when ? ` بتاريخ ${when}` : ''} لأن الموعد خلال أقل من ٢٤ ساعة.`,
-      `שלום, אני צריך לבטל את ההזמנה${when ? ` בתאריך ${when}` : ''} כי נשארו פחות מ-24 שעות.`
-    );
-    window.open(buildWhatsAppUrl(message), '_blank', 'noopener,noreferrer');
-    setLateCancel(null);
-  };
-
-  const deleteBookingNow = async (id, skipConfirm = false) => {
-    if (!skipConfirm && !window.confirm(t('حذف هذا الحجز فوراً؟', 'למחוק הזמנה זו מיד?'))) return;
+  const deleteBookingNow = async (id) => {
+    if (!window.confirm(t('حذف هذا الحجز فوراً؟', 'למחוק הזמנה זו מיד?'))) return;
     const prev = bookings;
     setBookings((list) => list.filter((b) => b.id !== id));
     try {
@@ -463,33 +430,11 @@ export default function MyBookingsPage() {
                 isOwner={isOwner}
                 t={t}
                 onDelete={isOwner ? deleteBookingNow : undefined}
-                onStudentCancel={isOwner ? undefined : requestStudentCancel}
               />
             ))}
           </Stack>
         )}
       </Container>
-      <Dialog open={Boolean(lateCancel)} onClose={() => setLateCancel(null)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontWeight: 900 }}>
-          {t('لا يمكن الإلغاء من الموقع', 'לא ניתן לבטל באתר')}
-        </DialogTitle>
-        <DialogContent>
-          <Typography sx={{ lineHeight: 1.8 }}>
-            {t(
-              'بقي أقل من ٢٤ ساعة على بدء المحاضرة، لذلك لا يُلغى الحجز من هنا. إذا كان الإلغاء ضرورياً، تواصل أولاً مع المالك عبر واتساب.',
-              'נשארו פחות מ-24 שעות לתחילת השיעור, ולכן אי אפשר לבטל מכאן. אם הביטול הכרחי, דברו קודם עם הבעלים בוואטסאפ.'
-            )}
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setLateCancel(null)} sx={{ fontWeight: 800 }}>
-            {t('إغلاق', 'סגירה')}
-          </Button>
-          <Button variant="contained" onClick={openOwnerWhatsApp} sx={{ fontWeight: 900 }}>
-            {t('واتساب المالك', 'וואטסאפ לבעלים')}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
