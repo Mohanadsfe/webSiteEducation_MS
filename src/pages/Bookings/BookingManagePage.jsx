@@ -65,6 +65,7 @@ export default function BookingManagePage() {
   const [savingHours, setSavingHours] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const [noticeWarn, setNoticeWarn] = useState('');
   const [settings, setSettings] = useState({ ...DEFAULT_BOOKING_SETTINGS });
   const [bookings, setBookings] = useState([]);
   const [students, setStudents] = useState([]);
@@ -613,9 +614,21 @@ export default function BookingManagePage() {
     if (bookingId) setSmsBookingId(bookingId);
     else setSmsSending(true);
     setError('');
+    setNoticeWarn('');
     try {
-      await sendStudentNotice(studentId, text);
-      setOk(t('تم إرسال الإشعار للطالب', 'ההתראה נשלחה לתלמיד'));
+      const result = await sendStudentNotice(studentId, text);
+      const pushed = Number(result?.pushed || 0);
+      if (pushed > 0) {
+        setOk(t(
+          `وصل الإشعار إلى ${pushed} جهاز.`,
+          `ההתראה הגיעה ל-${pushed} מכשירים.`
+        ));
+      } else {
+        setNoticeWarn(t(
+          'لم يصل إلى هاتف الطالب. حُفظ داخل الموقع فقط. يصله على الجهاز بعد أن يضغط «تفعيل إشعارات الحجز» ويسمح بالإشعارات.',
+          'לא הגיע לטלפון של התלמיד. נשמר באתר בלבד. יגיע למכשיר אחרי הפעלת התראות ואישור.'
+        ));
+      }
       if (!bookingId) setSmsText('');
     } catch (e) {
       setError(noticeErrorText(e));
@@ -643,13 +656,22 @@ export default function BookingManagePage() {
     if (!agreed) return;
     setSmsSending(true);
     setError('');
+    setNoticeWarn('');
     try {
       const result = await sendNoticeToAllStudents(text);
-      const count = Number(result?.sent || 0);
-      setOk(t(
-        `تم إرسال الإشعار إلى ${count} طالب`,
-        `ההתראה נשלחה ל-${count} תלמידים`
-      ));
+      const pushed = Number(result?.pushed || 0);
+      const sent = Number(result?.sent || 0);
+      if (pushed > 0) {
+        setOk(t(
+          `وصل الإشعار إلى ${pushed} جهاز، من ${sent} طالب.`,
+          `ההתראה הגיעה ל-${pushed} מכשירים, מתוך ${sent} תלמידים.`
+        ));
+      } else {
+        setNoticeWarn(t(
+          `حُفظ الإشعار لـ ${sent} طالب داخل الموقع، ولم يصل إلى أي هاتف. كل طالب يحتاج «تفعيل إشعارات الحجز» على جهازه.`,
+          `ההתראה נשמרה באתר עבור ${sent} תלמידים, ולא הגיעה לאף טלפון. כל תלמיד צריך להפעיל התראות במכשיר.`
+        ));
+      }
       setSmsText('');
     } catch (e) {
       setError(noticeErrorText(e));
@@ -775,6 +797,11 @@ export default function BookingManagePage() {
       {error && (
         <Alert severity="error" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setError('')}>
           {error}
+        </Alert>
+      )}
+      {noticeWarn && (
+        <Alert severity="warning" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setNoticeWarn('')}>
+          {noticeWarn}
         </Alert>
       )}
       {ok && (
