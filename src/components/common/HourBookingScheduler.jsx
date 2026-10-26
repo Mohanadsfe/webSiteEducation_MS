@@ -474,6 +474,17 @@ export default function HourBookingScheduler() {
             label={profile.phone || t('لا يوجد هاتف', 'אין טלפון')}
             sx={{ fontWeight: 700 }}
           />
+          {uid && (
+            <Button
+              component={RouterLink}
+              to="/me#settings"
+              variant="contained"
+              size="small"
+              sx={{ fontWeight: 900, borderRadius: 999 }}
+            >
+              {t('اعدادات', 'הגדרות')}
+            </Button>
+          )}
         </Stack>
 
         {uid && (

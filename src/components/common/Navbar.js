@@ -263,8 +263,9 @@ function Navbar() {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: '1rem',
+              gap: '0.5rem',
               flexDirection: 'row-reverse',
+              flexWrap: 'wrap',
             }}
           >
             <Button
@@ -370,14 +371,9 @@ function Navbar() {
             </Button>
 
             {isLoggedIn && role === 'student' && (
-              <>
-                <Button color="inherit" component={Link} to="/me" sx={{ fontWeight: 800 }}>
-                  {t('حسابي', 'החשבון שלי')}
-                </Button>
-                <Button color="inherit" component={Link} to="/me#settings" sx={{ fontWeight: 800 }}>
-                  {t('اعدادات', 'הגדרות')}
-                </Button>
-              </>
+              <Button color="inherit" component={Link} to="/me" sx={{ fontWeight: 800 }}>
+                {t('حسابي', 'החשבון שלי')}
+              </Button>
             )}
 
             {isLoggedIn && (role === 'teacher' || isOwnerAdminEmail(userEmail)) && (
@@ -407,12 +403,29 @@ function Navbar() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <LanguageToggle />
             {isLoggedIn && (
-              <Typography
-                variant="subtitle1"
-                sx={{ fontWeight: 800, mr: 1, letterSpacing: 0.2 }}
-              >
-                👋 {t('مرحباً', 'שלום')} {userName}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 800, letterSpacing: 0.2 }}
+                >
+                  👋 {t('مرحباً', 'שלום')} {userName}
+                </Typography>
+                <Button
+                  component={Link}
+                  to="/me#settings"
+                  size="small"
+                  sx={{
+                    fontWeight: 900,
+                    color: '#0b3d5c',
+                    bgcolor: '#fff',
+                    borderRadius: 999,
+                    px: 1.5,
+                    '&:hover': { bgcolor: '#e8f4ff' },
+                  }}
+                >
+                  {t('اعدادات', 'הגדרות')}
+                </Button>
+              </Box>
             )}
           </Box>
         </Toolbar>
