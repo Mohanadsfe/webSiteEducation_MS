@@ -118,7 +118,10 @@ export default function BookingReminder() {
 
         const lead = kind === 'hours36' ? '٣٦' : kind === 'hours30' ? '٣٠' : '٣';
         const ttl = `تذكير — محاضرتك بعد حوالي ${lead} ساعة`;
-        const msg = `مرحباً! محاضرتك ${when} (${booking.duration || booking.hours || 1} ساعة)، بعد حوالي ${lead} ساعة.\n\nمعهد المعرفة.`;
+        const cancelNote = kind === 'hours36'
+          ? '\n\nيجب إلغاء المحاضرة قبل 24 ساعة من الموعد، وبعد ذلك لن يُقبل الإلغاء.'
+          : '';
+        const msg = `مرحباً! محاضرتك ${when} (${booking.duration || booking.hours || 1} ساعة)، بعد حوالي ${lead} ساعة.${cancelNote}\n\nمعهد المعرفة.`;
 
         markLocalSeen(booking.id, kind);
         try {

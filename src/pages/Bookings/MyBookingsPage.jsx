@@ -19,7 +19,6 @@ import { isOwnerAdminEmail } from '../../constants/admin';
 import { useLanguage } from '../../context/LanguageContext';
 import UsersService from '../../services/UsersService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
-import EnableBookingNotifications from '../../components/common/EnableBookingNotifications';
 
 function statusMeta(status, t) {
   const s = String(status || '').toLowerCase();
@@ -311,7 +310,6 @@ export default function MyBookingsPage() {
           <BookingCancelPolicy />
         </Box>
 
-        <EnableBookingNotifications />
 
         <Box
           sx={{

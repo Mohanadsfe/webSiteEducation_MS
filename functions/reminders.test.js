@@ -29,6 +29,8 @@ test('a lesson is reminded at 36 hours, 30 hours, and 3 hours, once each', () =>
   assert.equal(at36.length, 1);
   assert.equal(at36[0].kind, 'hours36');
   assert.equal(at36[0].when, '2026-10-28 16:00');
+  assert.match(at36[0].body, /قبل 24 ساعة/);
+  assert.match(at36[0].body, /لن يُقبل الإلغاء/);
 
   const at30 = selectSmsJobs([lecture], new Date('2026-10-27T09:00:00Z'));
   assert.equal(at30.length, 1);

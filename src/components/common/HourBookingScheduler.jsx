@@ -31,7 +31,6 @@ import {
 import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
 import BookingCancelPolicy from './BookingCancelPolicy';
-import EnableBookingNotifications from './EnableBookingNotifications';
 import CancelBookingButton from './CancelBookingButton';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -492,7 +491,6 @@ export default function HourBookingScheduler() {
             <Typography fontWeight={900} sx={{ mb: 1 }}>
               {t('حجوزاتي', 'ההזמנות שלי')}
             </Typography>
-            <EnableBookingNotifications />
             {myUpcoming.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 {t('لا يوجد حجز قادم. اختر يوماً وساعة بالأسفل.', 'אין הזמנה קרובה. בחרו יום ושעה למטה.')}

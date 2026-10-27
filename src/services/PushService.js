@@ -1,4 +1,4 @@
-import { deleteField, doc, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, deleteField, doc, getDocs, setDoc } from 'firebase/firestore';
 import { getMessaging, getToken, isSupported } from 'firebase/messaging';
 import { app, db } from '../firebaseConfig';
 
@@ -71,7 +71,32 @@ async function saveToken(uid) {
   }, { merge: true });
   await setDoc(doc(db, 'users', uid), {
     pushSubscriptions: deleteField(),
+    notificationOptOut: false,
   }, { merge: true }).catch(() => {});
+  return { ok: true };
+}
+
+const OPT_OUT_KEY = 'ms_notice_cancelled';
+
+export function noticesCancelled() {
+  try {
+    return localStorage.getItem(OPT_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Stop messages on this account. Cancel is the way to opt out. */
+export async function cancelBookingNotifications(uid) {
+  try {
+    localStorage.setItem(OPT_OUT_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+  if (!uid) return { ok: false, reason: 'signed-out' };
+  await setDoc(doc(db, 'users', uid), { notificationOptOut: true }, { merge: true });
+  const snap = await getDocs(collection(db, 'users', uid, 'fcmTokens'));
+  await Promise.all(snap.docs.map((row) => deleteDoc(row.ref)));
   return { ok: true };
 }
 
@@ -97,6 +122,11 @@ export async function enableBookingNotifications(uid) {
   let permission = Notification.permission;
   if (permission === 'default') permission = await Notification.requestPermission();
   if (permission !== 'granted') return { ok: false, reason: permission || 'denied' };
+  try {
+    localStorage.removeItem(OPT_OUT_KEY);
+  } catch {
+    /* ignore */
+  }
   try {
     return await saveToken(uid);
   } catch (e) {

@@ -45,6 +45,10 @@ async function deleteStaleTokens(studentId, ids) {
 
 async function deliverToStudent(studentId, message) {
   const db = getFirestore();
+  const profile = await db.collection('users').doc(studentId).get();
+  if (profile.exists && profile.get('notificationOptOut') === true) {
+    return { stored: false, pushed: 0, failed: 0, skipped: true };
+  }
   await db.collection('notifications').add({
     userId: studentId,
     title: message.title,
@@ -107,7 +111,13 @@ exports.sendStudentSms = onCall(
     const notice = noticeMessage(message);
     if (!all) {
       const result = await deliverToStudent(studentId, notice);
-      return { ok: true, sent: 1, pushed: result.pushed, failed: result.failed };
+      return {
+        ok: true,
+        sent: result.skipped ? 0 : 1,
+        pushed: result.pushed,
+        failed: result.failed,
+        skipped: result.skipped ? 1 : 0,
+      };
     }
 
     const snap = await getFirestore().collection('users').where('role', '==', 'student').get();
@@ -115,6 +125,7 @@ exports.sendStudentSms = onCall(
     let sent = 0;
     let pushed = 0;
     let failed = 0;
+    let skipped = 0;
     const size = 8;
     for (let i = 0; i < ids.length; i += size) {
       const chunk = ids.slice(i, i + size);
@@ -127,13 +138,14 @@ exports.sendStudentSms = onCall(
         }
       }));
       results.forEach((result) => {
-        sent += 1;
+        if (result.skipped) skipped += 1;
+        else sent += 1;
         pushed += result.pushed || 0;
         failed += result.failed || 0;
       });
     }
-    console.log('Owner notice', 'students', sent, 'pushed', pushed, 'failed', failed);
-    return { ok: true, sent, pushed, failed };
+    console.log('Owner notice', 'students', sent, 'pushed', pushed, 'failed', failed, 'skipped', skipped);
+    return { ok: true, sent, pushed, failed, skipped };
   }
 );
 

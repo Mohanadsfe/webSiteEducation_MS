@@ -1,30 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Stack, Typography } from '@mui/material';
-import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import {
+  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography,
+} from '@mui/material';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../services/FirebaseService';
 import {
+  cancelBookingNotifications,
   enableBookingNotifications,
+  noticesCancelled,
   pushSupport,
   refreshBookingNotifications,
 } from '../../services/PushService';
 import { useLanguage } from '../../context/LanguageContext';
 
 /**
- * Permission is requested only when the student clicks the button.
+ * Signed-in users are asked to accept messages.
+ * Cancel is how they stop receiving them.
  */
-export default function EnableBookingNotifications() {
+export default function EnableBookingNotifications({ variant = 'prompt' }) {
   const { t } = useLanguage();
   const [uid, setUid] = useState('');
   const [permission, setPermission] = useState('default');
-  const [status, setStatus] = useState('');
+  const [cancelled, setCancelled] = useState(noticesCancelled);
+  const [ask, setAsk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const support = pushSupport();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setUid(user ? user.uid : '');
-      setStatus('');
+      setError('');
     });
     return unsub;
   }, []);
@@ -32,94 +38,100 @@ export default function EnableBookingNotifications() {
   useEffect(() => {
     if (typeof Notification === 'undefined') {
       setPermission('unsupported');
-      return;
+      return undefined;
     }
     setPermission(Notification.permission);
-    if (!uid || Notification.permission !== 'granted') return undefined;
-    let cancel = false;
-    refreshBookingNotifications(uid).then((result) => {
-      if (cancel || result.ok || result.reason === 'not-granted') return;
-      if (result.reason === 'missing-config') setStatus('missing-config');
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [uid]);
+    if (!uid) return undefined;
+    if (Notification.permission === 'granted' && !noticesCancelled()) {
+      refreshBookingNotifications(uid).catch(() => {});
+      return undefined;
+    }
+    if (Notification.permission === 'default' && !noticesCancelled() && variant === 'prompt') {
+      setAsk(true);
+    }
+    return undefined;
+  }, [uid, variant]);
 
   if (!uid) return null;
 
-  const enabled = permission === 'granted' && support !== 'missing-config' && status !== 'failed';
-
-  const onEnable = async () => {
+  const accept = async () => {
     setBusy(true);
-    setStatus('');
+    setError('');
     const result = await enableBookingNotifications(uid);
     setBusy(false);
     if (typeof Notification !== 'undefined') setPermission(Notification.permission);
     if (result.ok) {
-      setStatus('on');
+      setCancelled(false);
+      setAsk(false);
       return;
     }
-    setStatus(result.reason || 'failed');
+    if (result.reason === 'denied') setAsk(false);
+    setError(result.reason === 'denied'
+      ? t('تم إلغاء الرسائل من المتصفح.', 'ההתראות בוטלו בדפדפן.')
+      : t('تعذر تفعيل الرسائل. حاول مرة أخرى.', 'לא הצלחנו להפעיל התראות. נסו שוב.'));
   };
 
-  const problem = status === 'denied' || permission === 'denied'
-    ? t(
-      'المتصفح منع الإشعارات. اسمح بها من إعدادات الموقع في المتصفح، ثم اضغط الزر مرة أخرى.',
-      'הדפדפן חסם התראות. אשרו אותן בהגדרות האתר ואז לחצו שוב.'
-    )
-    : status === 'failed'
-      ? t(
-        'تعذر حفظ إشعار هذا الجهاز. تحقق من الاتصال وحاول مرة أخرى.',
-        'לא הצלחנו לשמור את ההתראה במכשיר זה. בדקו את החיבור ונסו שוב.'
-      )
-      : '';
+  const cancel = async () => {
+    setBusy(true);
+    await cancelBookingNotifications(uid).catch(() => {});
+    setBusy(false);
+    setCancelled(true);
+    setAsk(false);
+  };
+
+  const receiving = permission === 'granted' && !cancelled;
 
   return (
-    <Stack spacing={1} sx={{ mb: 2 }}>
-      <Button
-        variant="contained"
-        color={enabled || status === 'on' ? 'success' : 'primary'}
-        startIcon={<NotificationsActiveIcon />}
-        disabled={busy || support === 'unsupported' || support === 'insecure' || support === 'ios-home-screen'}
-        onClick={onEnable}
-        sx={{ fontWeight: 900, borderRadius: 2, alignSelf: 'flex-start' }}
-      >
-        {enabled || status === 'on'
-          ? t('إشعارات الحجز مفعّلة', 'התראות ההזמנה פעילות')
-          : t('تفعيل إشعارات الحجز', 'הפעלת התראות הזמנה')}
-      </Button>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.6 }}>
-        {t(
-          'Enable Booking Notifications — تنبيه في الجهاز عند اقتراب المحاضرة، وليس رسالة SMS. يحتاج إذناً واتصالاً بالإنترنت. لا يُطلب الإذن إلا بعد الضغط.',
-          'Enable Booking Notifications — התראה במכשיר לפני השיעור, לא SMS. נדרשים אישור וחיבור לאינטרנט. האישור מתבקש רק אחרי לחיצה.'
-        )}
-      </Typography>
-      {support === 'ios-home-screen' && (
-        <Alert severity="info">
-          {t(
-            'على iPhone و iPad، إشعارات الموقع تعمل فقط بعد إضافة الموقع إلى الشاشة الرئيسية (iOS 16.4 أو أحدث) وفتحه من الأيقونة، ثم الضغط على الزر والموافقة. هذا ليس متاحاً من تبويب Safari العادي.',
-            'ב-iPhone וב-iPad התראות אתר עובדות רק אחרי הוספה למסך הבית (iOS 16.4 ומעלה), פתיחה מהאייקון, ואז אישור. לא מתוך לשונית Safari רגילה.'
+    <>
+      <Dialog open={ask && variant === 'prompt'} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          {t('رسائل التذكير', 'הודעות תזכורת')}
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            {t(
+              'ستصلك رسائل الحجز على هذا الجهاز حتى إذا كان الموقع مغلقاً. اضغط قبول، أو إلغاء إذا لا تريد الرسائل.',
+              'ההודעות יגיעו למכשיר גם כשהאתר סגור. לחצו אישור, או ביטול אם אינכם רוצים הודעות.'
+            )}
+          </Typography>
+          {error && <Alert severity="warning" sx={{ mt: 2 }}>{error}</Alert>}
+          {support === 'ios-home-screen' && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              {t(
+                'على iPhone أضف الموقع إلى الشاشة الرئيسية وافتحه من الأيقونة، ثم اضغط قبول.',
+                'ב-iPhone הוסיפו את האתר למסך הבית ופתחו מהאייקון, ואז לחצו אישור.'
+              )}
+            </Alert>
           )}
-        </Alert>
-      )}
-      {support === 'unsupported' && (
-        <Alert severity="warning">
-          {t(
-            'هذا المتصفح لا يدعم إشعارات المواقع. جرّب Chrome على أندرويد أو متصفح سطح المكتب.',
-            'הדפדפן הזה לא תומך בהתראות אתר. נסו Chrome באנדרואיד או דפדפן במחשב.'
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancel} disabled={busy}>
+            {t('إلغاء', 'ביטול')}
+          </Button>
+          <Button variant="contained" onClick={accept} disabled={busy || support === 'unsupported' || support === 'ios-home-screen'}>
+            {t('قبول', 'אישור')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {variant === 'settings' && (
+        <Stack spacing={1} sx={{ mt: 2 }}>
+          <Typography variant="body2">
+            {receiving
+              ? t('ستصلك الرسائل. يمكنك الإلغاء فقط إذا لا تريدها.', 'ההודעות פעילות. אפשר לבטל רק אם אינכם רוצים אותן.')
+              : t('الرسائل متوقفة.', 'ההודעות כבויות.')}
+          </Typography>
+          {receiving ? (
+            <Button color="error" variant="outlined" onClick={cancel} disabled={busy} sx={{ fontWeight: 900, alignSelf: 'flex-start' }}>
+              {t('إلغاء الرسائل', 'ביטול ההודעות')}
+            </Button>
+          ) : (
+            <Button variant="contained" onClick={accept} disabled={busy} sx={{ fontWeight: 900, alignSelf: 'flex-start' }}>
+              {t('قبول الرسائل', 'אישור הודעות')}
+            </Button>
           )}
-        </Alert>
+        </Stack>
       )}
-      {support === 'insecure' && (
-        <Alert severity="warning">
-          {t(
-            'الإشعارات تعمل على الموقع المنشور أو على localhost فقط.',
-            'התראות עובדות באתר המפורסם או ב-localhost בלבד.'
-          )}
-        </Alert>
-      )}
-      {problem && <Alert severity="warning">{problem}</Alert>}
-    </Stack>
+    </>
   );
 }

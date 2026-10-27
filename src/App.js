@@ -22,6 +22,7 @@ import TeacherApprovals from './pages/Admin/TeacherApprovals';
 import ExamReminder from './components/common/ExamReminder';
 import BookingReminder from './components/common/BookingReminder';
 import LecturePush from './components/common/LecturePush';
+import EnableBookingNotifications from './components/common/EnableBookingNotifications';
 import { LanguageProvider } from './context/LanguageContext';
 import theme from './theme';
 
@@ -36,6 +37,7 @@ function AppContent() {
       {!shouldHideNavbar && <ExamReminder />}
       {!shouldHideNavbar && <BookingReminder />}
       {!shouldHideNavbar && <LecturePush />}
+      {!shouldHideNavbar && <EnableBookingNotifications />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<LoginPage />} />

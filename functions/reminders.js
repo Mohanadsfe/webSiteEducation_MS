@@ -77,12 +77,12 @@ function hoursLabel(hoursLeft) {
   return `${hoursLeft} ساعات`;
 }
 
-function reminderText(appt, start, minutesLeft) {
+function reminderText(appt, start, minutesLeft, kind) {
   const name = appt.studentName || 'طالبنا';
   const hours = appt.duration || appt.hours || 1;
   const hoursLeft = Math.max(1, Math.round(minutesLeft / 60));
-  const cancelNote = minutesLeft > 24 * 60
-    ? ' للإلغاء من الموقع: قبل 24 ساعة من الموعد.'
+  const cancelNote = kind === 'hours36'
+    ? ' يجب إلغاء المحاضرة قبل 24 ساعة من الموعد، وبعد ذلك لن يُقبل الإلغاء.'
     : '';
   return (
     `مرحباً ${name}، تذكير من معهد المعرفة: `
@@ -117,24 +117,30 @@ function selectSmsJobs(appointments, nowInput) {
     if (minutesLeft <= 0) continue;
 
     const when = start.format('YYYY-MM-DD HH:mm');
-    const body = reminderText(appt, start, minutesLeft);
-    const base = { id: appt.id, studentId, when, body };
-
+    let kind = '';
     if (
       minutesLeft <= MINUTES_36H
       && minutesLeft > MINUTES_30H
       && !appt.reminderHours36CloudSent
     ) {
-      jobs.push({ ...base, kind: 'hours36' });
+      kind = 'hours36';
     } else if (
       minutesLeft <= MINUTES_30H
       && minutesLeft > MINUTES_3H
       && !appt.reminderHours30CloudSent
     ) {
-      jobs.push({ ...base, kind: 'hours30' });
+      kind = 'hours30';
     } else if (minutesLeft <= MINUTES_3H && !appt.reminderHours3CloudSent) {
-      jobs.push({ ...base, kind: 'hours3' });
+      kind = 'hours3';
     }
+    if (!kind) continue;
+    jobs.push({
+      id: appt.id,
+      studentId,
+      when,
+      kind,
+      body: reminderText(appt, start, minutesLeft, kind),
+    });
   }
 
   return jobs;
