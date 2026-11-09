@@ -10,7 +10,11 @@ export const LATE_CANCEL_LIMIT = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function bookingDayStart(dateKey) {
-  return dayjs.tz(`${dateKey}T00:00:00`, BOOKING_TZ);
+  return dayjs.tz(`${dateKey} 00:00:00`, 'YYYY-MM-DD HH:mm:ss', BOOKING_TZ);
+}
+
+export function lessonStart(dateKey, startTime) {
+  return dayjs.tz(`${dateKey} ${startTime}`, 'YYYY-MM-DD HH:mm', BOOKING_TZ);
 }
 
 /** A day can be booked only when that day starts at least 24 hours from now. */

@@ -100,11 +100,8 @@ service cloud.firestore {
         || (signedIn()
             && request.resource.data.studentId == request.auth.uid
             && request.resource.data.status == 'confirmed'
-            && request.resource.data.bookDayStart is timestamp
             && request.resource.data.startAt is timestamp
-            && request.resource.data.bookDayStart > request.time + duration.value(24, 'h')
-            && request.resource.data.startAt >= request.resource.data.bookDayStart
-            && request.resource.data.startAt < request.resource.data.bookDayStart + duration.value(24, 'h'));
+            && request.resource.data.startAt > request.time);
       allow update: if isTeacher() || isOwnerEmail()
         // Student may update payment fields / reminders on own booking (cannot change status or identity)
         || (signedIn()

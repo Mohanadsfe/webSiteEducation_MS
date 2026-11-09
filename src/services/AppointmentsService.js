@@ -10,7 +10,7 @@ import {
   where,
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { bookingDayStart } from './bookingPolicy';
+import { bookingDayStart, lessonStart } from './bookingPolicy';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth, db } from './FirebaseService';
 
@@ -123,8 +123,12 @@ export function studentCanCancelBooking(appt, nowMs = Date.now()) {
 }
 
 function startAtFromPayload(payload) {
-  const start = parseAppointmentStart(payload);
-  return start ? start.toDate() : undefined;
+  if (payload?.dateKey && payload?.startTime) {
+    const start = lessonStart(payload.dateKey, payload.startTime);
+    if (start.isValid()) return start.toDate();
+  }
+  const parsed = parseAppointmentStart(payload);
+  return parsed ? parsed.toDate() : undefined;
 }
 
 function bookDayStartFromPayload(payload) {
