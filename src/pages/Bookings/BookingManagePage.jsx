@@ -38,6 +38,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import NotificationService from '../../services/NotificationService';
 import { sendStudentNotice, sendNoticeToAllStudents, noticeErrorText } from '../../services/SmsService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
+import StudentBookingCounts from '../../components/common/StudentBookingCounts';
+import { bookingStats } from '../../services/bookingStats';
 import {
   buildStudentLectureReminderMessage,
   buildWhatsAppToPhone,
@@ -618,15 +620,20 @@ export default function BookingManagePage() {
     try {
       const result = await sendStudentNotice(studentId, text);
       const pushed = Number(result?.pushed || 0);
-      if (pushed > 0) {
+      if (Number(result?.skipped || 0) > 0) {
+        setNoticeWarn(t(
+          'هذا الطالب ألغى استلام الرسائل.',
+          'תלמיד זה ביטל את קבלת ההודעות.'
+        ));
+      } else if (pushed > 0) {
         setOk(t(
           `وصل الإشعار إلى ${pushed} جهاز.`,
           `ההתראה הגיעה ל-${pushed} מכשירים.`
         ));
       } else {
         setNoticeWarn(t(
-          'لم يصل إلى هاتف الطالب. حُفظ داخل الموقع فقط. يصله على الجهاز بعد أن يضغط «تفعيل إشعارات الحجز» ويسمح بالإشعارات.',
-          'לא הגיע לטלפון של התלמיד. נשמר באתר בלבד. יגיע למכשיר אחרי הפעלת התראות ואישור.'
+          'لم يصل إلى هاتف الطالب. حُفظ داخل الموقع فقط. يصله على الجهاز بعد أن يضغط قبول عندما يطلب الموقع الرسائل.',
+          'לא הגיע לטלפון של התלמיד. נשמר באתר בלבד. יגיע למכשיר אחרי שיאשר את ההודעות באתר.'
         ));
       }
       if (!bookingId) setSmsText('');
@@ -668,8 +675,8 @@ export default function BookingManagePage() {
         ));
       } else {
         setNoticeWarn(t(
-          `حُفظ الإشعار لـ ${sent} طالب داخل الموقع، ولم يصل إلى أي هاتف. كل طالب يحتاج «تفعيل إشعارات الحجز» على جهازه.`,
-          `ההתראה נשמרה באתר עבור ${sent} תלמידים, ולא הגיעה לאף טלפון. כל תלמיד צריך להפעיל התראות במכשיר.`
+          `حُفظ الإشعار لـ ${sent} طالب داخل الموقع، ولم يصل إلى أي هاتف. يصل بعد أن يضغط الطالب قبول عندما يطلب الموقع الرسائل.`,
+          `ההתראה נשמרה באתר עבור ${sent} תלמידים, ולא הגיעה לאף טלפון. תגיע אחרי שהתלמיד יאשר את ההודעות באתר.`
         ));
       }
       setSmsText('');
@@ -793,6 +800,27 @@ export default function BookingManagePage() {
       <Box sx={{ mb: 2 }}>
         <BookingCancelPolicy dense />
       </Box>
+
+      {bookings.length > 0 && (
+        <Stack spacing={1} sx={{ mb: 2 }}>
+          <Typography fontWeight={900}>
+            {t('عداد كل طالب', 'מונה לכל תלמיד')}
+          </Typography>
+          {[...bookings.reduce((map, booking) => {
+            const key = booking.studentId || booking.studentEmail || booking.id;
+            if (!map.has(key)) {
+              map.set(key, {
+                name: booking.studentName || booking.studentEmail || key,
+                list: [],
+              });
+            }
+            map.get(key).list.push(booking);
+            return map;
+          }, new Map()).values()].map((row) => (
+            <StudentBookingCounts key={row.name} name={row.name} stats={bookingStats(row.list)} />
+          ))}
+        </Stack>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setError('')}>

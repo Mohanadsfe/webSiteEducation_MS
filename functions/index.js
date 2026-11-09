@@ -4,6 +4,7 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
+const { sendReminderEmails } = require('./mail');
 const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
 const { deleteAccountData } = require('./account');
 const { getAuth } = require('firebase-admin/auth');
@@ -16,9 +17,12 @@ const OWNER_EMAILS = new Set([
 initializeApp();
 
 const FLAG = {
-  hours36: 'reminderHours36CloudSent',
-  hours30: 'reminderHours30CloudSent',
+  hours48: 'reminderHours48CloudSent',
   hours3: 'reminderHours3CloudSent',
+};
+const EMAIL_FLAG = {
+  hours48: 'reminderHours48EmailSent',
+  hours3: 'reminderHours3EmailSent',
 };
 
 async function loadStudentTokens(studentId) {
@@ -45,6 +49,10 @@ async function deleteStaleTokens(studentId, ids) {
 
 async function deliverToStudent(studentId, message) {
   const db = getFirestore();
+  const profile = await db.collection('users').doc(studentId).get();
+  if (profile.exists && profile.get('notificationOptOut') === true) {
+    return { stored: false, pushed: 0, failed: 0, skipped: true };
+  }
   await db.collection('notifications').add({
     userId: studentId,
     title: message.title,
@@ -107,7 +115,13 @@ exports.sendStudentSms = onCall(
     const notice = noticeMessage(message);
     if (!all) {
       const result = await deliverToStudent(studentId, notice);
-      return { ok: true, sent: 1, pushed: result.pushed, failed: result.failed };
+      return {
+        ok: true,
+        sent: result.skipped ? 0 : 1,
+        pushed: result.pushed,
+        failed: result.failed,
+        skipped: result.skipped ? 1 : 0,
+      };
     }
 
     const snap = await getFirestore().collection('users').where('role', '==', 'student').get();
@@ -115,6 +129,7 @@ exports.sendStudentSms = onCall(
     let sent = 0;
     let pushed = 0;
     let failed = 0;
+    let skipped = 0;
     const size = 8;
     for (let i = 0; i < ids.length; i += size) {
       const chunk = ids.slice(i, i + size);
@@ -127,22 +142,22 @@ exports.sendStudentSms = onCall(
         }
       }));
       results.forEach((result) => {
-        sent += 1;
+        if (result.skipped) skipped += 1;
+        else sent += 1;
         pushed += result.pushed || 0;
         failed += result.failed || 0;
       });
     }
-    console.log('Owner notice', 'students', sent, 'pushed', pushed, 'failed', failed);
-    return { ok: true, sent, pushed, failed };
+    console.log('Owner notice', 'students', sent, 'pushed', pushed, 'failed', failed, 'skipped', skipped);
+    return { ok: true, sent, pushed, failed, skipped };
   }
 );
 
 /**
- * Every 15 minutes, with no click. Each lesson is notified three times:
- * 1) About 36 hours before it starts
- * 2) About 30 hours before it starts
- * 3) About 3 hours before it starts
- * Saved in the site, and pushed with Firebase Cloud Messaging if the student allowed notifications.
+ * Every 15 minutes, with no click. Each lesson is emailed twice:
+ * 1) About 48 hours before it starts, with the day-based cancel rule
+ * 2) About 3 hours before it starts, telling the student to be ready
+ * The same note is saved in the site and pushed when the student allowed notifications.
  */
 exports.sendLectureSmsReminders = onSchedule(
   {
@@ -172,26 +187,42 @@ exports.sendLectureSmsReminders = onSchedule(
     for (const job of jobs) {
       const ref = db.collection('appointments').doc(job.id);
       const flag = FLAG[job.kind];
-      const claimed = await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(ref);
-        if (!fresh.exists || fresh.get(flag)) return false;
-        tx.update(ref, {
-          [flag]: true,
-          [`${flag}At`]: new Date(),
+      const emailFlag = EMAIL_FLAG[job.kind];
+      if (!job.emailOnly) {
+        const claimed = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(ref);
+          if (!fresh.exists || fresh.get(flag)) return false;
+          tx.update(ref, {
+            [flag]: true,
+            [`${flag}At`]: new Date(),
+          });
+          return true;
         });
-        return true;
-      });
-      if (!claimed) continue;
+        if (!claimed) continue;
+        try {
+          const result = await deliverToStudent(job.studentId, reminderMessage(job));
+          console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed);
+        } catch (e) {
+          console.error('Reminder failed', job.id, job.kind, e.message);
+          await ref.update({
+            [flag]: FieldValue.delete(),
+            [`${flag}At`]: FieldValue.delete(),
+          });
+          continue;
+        }
+      }
 
       try {
-        const result = await deliverToStudent(job.studentId, reminderMessage(job));
-        console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed, 'failed', result.failed);
+        const mailed = await sendReminderEmails(job);
+        console.log('Reminder email', job.id, job.kind, 'sent', mailed.sent);
+        if (mailed.sent > 0) {
+          await ref.update({
+            [emailFlag]: true,
+            [`${emailFlag}At`]: new Date(),
+          });
+        }
       } catch (e) {
-        console.error('Reminder failed', job.id, job.kind, e.message);
-        await ref.update({
-          [flag]: FieldValue.delete(),
-          [`${flag}At`]: FieldValue.delete(),
-        });
+        console.error('Reminder email failed', job.id, job.kind, e.message || 'mail-failed');
       }
     }
   }
@@ -226,5 +257,58 @@ exports.deleteMyAccount = onCall(
     }
     console.log('Account deleted');
     return { ok: true };
+  }
+);
+
+/** Student cancel at any time. The hour is no longer reserved. */
+exports.cancelMyBooking = onCall(
+  {
+    region: 'europe-west1',
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول');
+    }
+    const bookingId = String(request.data?.bookingId || '').trim();
+    if (!bookingId) {
+      throw new HttpsError('invalid-argument', 'اختر الحجز');
+    }
+    const db = getFirestore();
+    const ref = db.collection('appointments').doc(bookingId);
+    const userRef = db.collection('users').doc(request.auth.uid);
+    let outcome;
+    try {
+      outcome = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return { error: 'not-found' };
+        if (snap.get('studentId') !== request.auth.uid) return { error: 'denied' };
+        const status = String(snap.get('status') || '').toLowerCase();
+        if (['cancelled', 'canceled', 'rejected', 'revoked'].includes(status)) {
+          return { ok: true, kind: 'cancelled', already: true };
+        }
+        tx.update(ref, {
+          status: 'cancelled',
+          cancelKind: 'student',
+          countsAsUsed: false,
+          cancelledAt: new Date(),
+          cancelledBy: 'student',
+          updatedAt: new Date(),
+        });
+        tx.set(userRef, {
+          earlyCancelCount: FieldValue.increment(1),
+        }, { merge: true });
+        return { ok: true, kind: 'student' };
+      });
+    } catch (e) {
+      console.error('Cancel booking failed', e.code || 'cancel-failed');
+      throw new HttpsError('internal', 'تعذر إلغاء الحجز');
+    }
+    if (outcome?.error === 'not-found') throw new HttpsError('not-found', 'الحجز غير موجود');
+    if (outcome?.error === 'denied') throw new HttpsError('permission-denied', 'هذا الحجز ليس لك');
+    return outcome;
   }
 );

@@ -67,8 +67,7 @@ function isActive(appt, now) {
   return true;
 }
 
-const MINUTES_36H = 36 * 60;
-const MINUTES_30H = 30 * 60;
+const MINUTES_48H = 48 * 60;
 const MINUTES_3H = 3 * 60;
 
 function hoursLabel(hoursLeft) {
@@ -77,27 +76,31 @@ function hoursLabel(hoursLeft) {
   return `${hoursLeft} ساعات`;
 }
 
-function reminderText(appt, start, minutesLeft) {
+function reminderText(appt, start, minutesLeft, kind) {
   const name = appt.studentName || 'طالبنا';
   const hours = appt.duration || appt.hours || 1;
   const hoursLeft = Math.max(1, Math.round(minutesLeft / 60));
-  const cancelNote = minutesLeft > 24 * 60
-    ? ' للإلغاء من الموقع: قبل 24 ساعة من الموعد.'
-    : '';
+  if (kind === 'hours3') {
+    return (
+      `مرحباً ${name}، استعد: لديك حجز في معهد المعرفة `
+      + `يوم ${start.format('YYYY-MM-DD')} الساعة ${start.format('HH:mm')} (${hours} ساعة). كن مستعداً.`
+    );
+  }
   return (
     `مرحباً ${name}، تذكير من معهد المعرفة: `
     + `محاضرتك ${start.format('YYYY-MM-DD')} الساعة ${start.format('HH:mm')} (${hours} ساعة)، `
-    + `بعد حوالي ${hoursLabel(hoursLeft)}.${cancelNote}`
+    + `بعد حوالي ${hoursLabel(hoursLeft)}. `
+    + 'يمكن الإلغاء قبل 24 ساعة من يوم الحجز، وليس قبل 24 ساعة من ساعة المحاضرة. '
+    + 'إذا لم يُلغَ قبل ذلك يُحتسب الحجز ولا يُرد المبلغ.'
   );
 }
 
 /**
  * Reminders that should go out now. The job runs every 15 minutes.
- * Each lesson is notified three times, once each:
- * - from 36 hours before, until the 30-hour reminder
- * - from 30 hours before, until the 3-hour reminder
+ * Each lesson is emailed twice, once each:
+ * - from 48 hours before, until the 3-hour reminder
  * - from 3 hours before, until the lesson starts
- * A lesson booked after a window has opened does not receive the earlier notices.
+ * A lesson booked inside the last 3 hours does not receive the 48-hour notice.
  */
 function selectSmsJobs(appointments, nowInput) {
   const now = dayjs(nowInput).tz(TZ);
@@ -117,24 +120,35 @@ function selectSmsJobs(appointments, nowInput) {
     if (minutesLeft <= 0) continue;
 
     const when = start.format('YYYY-MM-DD HH:mm');
-    const body = reminderText(appt, start, minutesLeft);
-    const base = { id: appt.id, studentId, when, body };
-
-    if (
-      minutesLeft <= MINUTES_36H
-      && minutesLeft > MINUTES_30H
-      && !appt.reminderHours36CloudSent
-    ) {
-      jobs.push({ ...base, kind: 'hours36' });
-    } else if (
-      minutesLeft <= MINUTES_30H
-      && minutesLeft > MINUTES_3H
-      && !appt.reminderHours30CloudSent
-    ) {
-      jobs.push({ ...base, kind: 'hours30' });
-    } else if (minutesLeft <= MINUTES_3H && !appt.reminderHours3CloudSent) {
-      jobs.push({ ...base, kind: 'hours3' });
+    let kind = '';
+    let emailOnly = false;
+    if (minutesLeft <= MINUTES_48H && minutesLeft > MINUTES_3H) {
+      if (!appt.reminderHours48CloudSent) kind = 'hours48';
+      else if (!appt.reminderHours48EmailSent) {
+        kind = 'hours48';
+        emailOnly = true;
+      }
+    } else if (minutesLeft <= MINUTES_3H) {
+      if (!appt.reminderHours3CloudSent) kind = 'hours3';
+      else if (!appt.reminderHours3EmailSent) {
+        kind = 'hours3';
+        emailOnly = true;
+      }
     }
+    if (!kind) continue;
+    jobs.push({
+      id: appt.id,
+      studentId,
+      when,
+      kind,
+      emailOnly,
+      studentName: appt.studentName || '',
+      studentEmail: appt.studentEmail || '',
+      studentPhone: appt.studentPhone || '',
+      duration: appt.duration || appt.hours || 1,
+      startIso: start.toISOString(),
+      body: reminderText(appt, start, minutesLeft, kind),
+    });
   }
 
   return jobs;

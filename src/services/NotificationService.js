@@ -1,5 +1,8 @@
 import emailjs from 'emailjs-com';
+import dayjs from 'dayjs';
 import { OWNER_ADMIN_EMAILS } from '../constants/admin';
+import { calendarLink } from './bookingPolicy';
+import { parseAppointmentStart } from './AppointmentsService';
 
 export class NotificationService {
   // Prefer env vars; fall back to placeholders until configured
@@ -29,6 +32,12 @@ export class NotificationService {
   // WhatsApp configuration
   static WHATSAPP_NUMBER = '+972548010225'; // Your WhatsApp number
 
+  static calendarLine(booking = {}) {
+    const start = parseAppointmentStart(booking) || (booking.date ? dayjs(booking.date) : null);
+    if (!start || !start.isValid()) return 'افتح «مواعيدي» في الموقع لإضافة الموعد.';
+    return calendarLink(start, booking.duration || booking.hours || 1, 'محاضرة — معهد المعرفة');
+  }
+
   static buildBookingEmailBody(booking = {}) {
     const lines = [
       'حجز ساعة دراسية جديد / New tutoring booking',
@@ -42,8 +51,11 @@ export class NotificationService {
       `📌 الحالة / Status: ${booking.status || 'confirmed'} (مؤكد تلقائياً / auto-confirmed)`,
       `🆔 رقم الحجز / Booking id: ${booking.id || '—'}`,
       '',
-      'الحجز مؤكد فوراً. يمكنك حذفه من إدارة الحجوزات لإعادة الساعة للجدول.',
-      'Booking is confirmed immediately. Delete it in Booking Manage to free the hour on the schedule.',
+      'الحجز مؤكد فوراً. الإلغاء المجاني قبل 24 ساعة من يوم الحجز، وليس من ساعة المحاضرة.',
+      'Booking is confirmed. A free cancel is 24 hours before the booking day, not before the lesson hour.',
+      '',
+      'يمكن للطالب ربط الموعد بجدول الهاتف من الرابط:',
+      this.calendarLine(booking),
     ];
     return lines.join('\n');
   }
@@ -76,7 +88,10 @@ export class NotificationService {
       booking.id ? `🆔 رقم الحجز: ${booking.id}` : '',
       '',
       'راجع صفحة «مواعيدي» في الموقع.',
-      'للإلغاء من الموقع: قبل أكثر من ٢٤ ساعة من بدء المحاضرة. إذا بقي أقل من ذلك، تواصل مع المالك.',
+      'يمكن إلغاء المحاضرة قبل 24 ساعة من يوم الحجز، وليس قبل 24 ساعة من ساعة المحاضرة.',
+      'إذا أُلغي بعد ذلك يُحتسب الحجز ولا يُرد المبلغ، والحجز يبقى لك. هذا مسموح ثلاث مرات، وبعدها الإلغاء من خلال المالك.',
+      'يمكنك ربط هذه الرسالة بجدول هاتفك من الرابط، فيصلك التذكير بسهولة:',
+      this.calendarLine(booking),
       '',
       'معهد المعرفة',
     ].filter(Boolean).join('\n');
@@ -215,33 +230,36 @@ export class NotificationService {
       return { success: false, message: 'no student email' };
     }
 
-    const lead = kind === 'hours36'
-      ? ['٣٦', '36']
-      : kind === 'hours30'
-        ? ['٣٠', '30']
-        : (kind === 'hours3' || kind === 'hours5' || kind === 'morning')
-          ? ['٣', '3']
-          : null;
-    const when = lead
-      ? `تذكير: محاضرتك بعد حوالي ${lead[0]} ساعة / Reminder: your lecture is in about ${lead[1]} hours`
-      : 'تذكير: محاضرتك غداً / Reminder: your lecture is tomorrow';
-
-    const subject = lead
-      ? `تذكير — محاضرتك بعد حوالي ${lead[0]} ساعة ${booking.date || ''}`
-      : `تذكير — محاضرتك غداً ${booking.date || ''}`;
-
-    const message = [
-      when,
-      '',
-      `👤 ${booking.studentName || 'طالب'}`,
-      `📅 الموعد: ${booking.date || '—'}`,
-      `⏰ المدة: ${booking.duration || booking.hours || 1} ساعة`,
-      '',
-      'نتمنى لكم درساً موفقاً — معهد المعرفة',
-      '',
-      'سياسة الإلغاء: يُرجى الإلغاء قبل ٢٤ ساعة من الموعد، وإلا يبقى الحجز محتسباً حتى لو لم تحضر.',
-      'يمكنكم مراجعة المواعيد من صفحة «مواعيدي» في الموقع.',
-    ].join('\n');
+    const ready = kind === 'hours3' || kind === 'hours5' || kind === 'morning';
+    const subject = ready
+      ? `استعد — لديك حجز ${booking.date || ''}`
+      : `تذكير قبل ٤٨ ساعة — ${booking.date || ''}`;
+    const message = ready
+      ? [
+        `مرحباً ${booking.studentName || 'طالبنا'}،`,
+        '',
+        'استعد، لديك حجز.',
+        `📅 الموعد: ${booking.date || '—'}`,
+        `⏰ المدة: ${booking.duration || booking.hours || 1} ساعة`,
+        'كن مستعداً.',
+        '',
+        'يمكنك ربط هذه الرسالة بجدول هاتفك من الرابط:',
+        this.calendarLine(booking),
+        '',
+        'معهد المعرفة',
+      ].join('\n')
+      : [
+        `مرحباً ${booking.studentName || 'طالبنا'}،`,
+        '',
+        `تذكير: محاضرتك ${booking.date || '—'} (${booking.duration || booking.hours || 1} ساعة).`,
+        'يمكن الإلغاء قبل 24 ساعة من يوم الحجز، وليس قبل 24 ساعة من ساعة المحاضرة.',
+        'إذا لم يُلغَ قبل ذلك يُحتسب الحجز ولا يُرد المبلغ.',
+        '',
+        'يمكنك ربط هذه الرسالة بجدول هاتفك من الرابط، فيصلك التذكير بسهولة:',
+        this.calendarLine(booking),
+        '',
+        'معهد المعرفة',
+      ].join('\n');
 
     const results = { emailjs: null, formSubmit: null, success: false };
 

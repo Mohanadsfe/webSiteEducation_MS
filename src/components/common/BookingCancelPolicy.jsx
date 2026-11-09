@@ -2,9 +2,7 @@ import React from 'react';
 import { Alert, Typography } from '@mui/material';
 import { useLanguage } from '../../context/LanguageContext';
 
-/**
- * Cancel policy — student self-cancel is only more than 24 hours before the lecture.
- */
+/** Cancel is measured from the booking day, not from the lesson hour. */
 export default function BookingCancelPolicy({ dense = false }) {
   const { t } = useLanguage();
   return (
@@ -22,8 +20,8 @@ export default function BookingCancelPolicy({ dense = false }) {
       </Typography>
       <Typography fontWeight={700} sx={{ lineHeight: 1.85, fontSize: dense ? '0.82rem' : '0.92rem' }}>
         {t(
-          'يمكن للطالب إلغاء حجزه من «مواعيدي» إذا تبقّى أكثر من ٢٤ ساعة على بدء المحاضرة، وتعود الساعة للجدول. إذا بقي أقل من ٢٤ ساعة لا يُلغى الحجز من الموقع؛ للإلغاء الضروري تواصل أولاً مع المالك عبر واتساب. المالك يستطيع إلغاء أي حجز في أي وقت.',
-          'תלמיד יכול לבטל הזמנה ב«התורים שלי» רק אם נשארו יותר מ-24 שעות לתחילת השיעור, והשעה חוזרת ללוח. אם נשארו פחות מ-24 שעות אי אפשר לבטל באתר; לביטול הכרחי יש לדבר קודם עם הבעלים בוואטסאפ. הבעלים יכול לבטל כל הזמנה בכל זמן.'
+          'يمكن للطالب إلغاء حجزه من «مواعيدي» في أي وقت. بعد الإلغاء تختفي تفاصيل الحجز وتعود الساعة للجدول.',
+          'תלמיד יכול לבטל הזמנה ב«התורים שלי» בכל זמן. אחרי הביטול פרטי ההזמנה נעלמים והשעה חוזרת ללוח.'
         )}
       </Typography>
     </Alert>

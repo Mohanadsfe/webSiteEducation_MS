@@ -1,15 +1,15 @@
 // HomePage.jsx
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Container, Typography, Button,
   Box, Stack, Collapse, Card, CardContent,
-  LinearProgress, IconButton, Paper
+  IconButton, Paper
 } from '@mui/material';
 import { Instagram, Payment, EventAvailable } from '@mui/icons-material';
 import { auth, db } from '../../services/FirebaseService';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
-  doc, getDoc, collection, query, where, onSnapshot, getDocs
+  doc, getDoc, collection, query, where, getDocs
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import StudentResultsGallery from '../../components/common/StudentResultsGallery';
@@ -25,13 +25,8 @@ import './HomePage.css';
 function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
 
-  const [studentEmail, setStudentEmail] = useState('');
   const [userId, setUserId] = useState('');
   const [userRole, setUserRole] = useState(''); // 'student' | 'teacher'
-  const [studentProfile, setStudentProfile] = useState({ name: '', phone: '' });
-
-  // Student bundle/purchases (live)
-  const [purchases, setPurchases] = useState([]);
   const [studentCourses, setStudentCourses] = useState([]);
 
   // Calendar visibility
@@ -52,20 +47,10 @@ function HomePage() {
       if (!user) {
         navigate('/login');
       } else {
-        setStudentEmail(user.email || '');
         setUserId(user.uid);
         try {
           const udoc = await getDoc(doc(db, 'users', user.uid));
-          if (udoc.exists()) {
-            const data = udoc.data();
-            setUserRole(data.role || '');
-            setStudentProfile({
-              name: `${data.firstName || ''} ${data.lastName || ''}`.trim(),
-              phone: data.phoneNumber || '',
-            });
-          } else {
-            setUserRole('');
-          }
+          setUserRole(udoc.exists() ? (udoc.data().role || '') : '');
         } catch (e) {
           console.error('Failed to read user role:', e);
         }
@@ -74,37 +59,6 @@ function HomePage() {
     });
     return unsubscribe;
   }, [navigate]);
-
-  // ---------- Live purchases for student ----------
-  useEffect(() => {
-    if (!userId || userRole !== 'student') return;
-
-    // Listen by studentId
-    const q1 = query(collection(db, 'purchases'), where('studentId', '==', userId));
-    const unsub1 = onSnapshot(q1, (snap) => {
-      setPurchases(prev => {
-        const map = new Map(prev.map(p => [p.id, p]));
-        snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-        return Array.from(map.values());
-      });
-    });
-
-    // Optional: also listen by studentEmail as a fallback for legacy docs
-    const unsubs = [unsub1];
-    if (studentEmail) {
-      const q2 = query(collection(db, 'purchases'), where('studentEmail', '==', studentEmail));
-      const unsub2 = onSnapshot(q2, (snap) => {
-        setPurchases(prev => {
-          const map = new Map(prev.map(p => [p.id, p]));
-          snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-          return Array.from(map.values());
-        });
-      });
-      unsubs.push(unsub2);
-    }
-
-    return () => unsubs.forEach(fn => fn && fn());
-  }, [userId, studentEmail, userRole]);
 
   // -------- Student enrolled courses summary --------
   useEffect(() => {
@@ -144,39 +98,6 @@ function HomePage() {
   // Hide opinions on double-click
   const handleInfoDoubleClick = () => setShowInfo(false);
 
-  // ---------- NORMALIZATION HELPERS (fix mixed field names / types) ----------
-  const toNum = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  const normalizePurchase = useCallback((p) => ({
-    id: p.id,
-    title: p.bundleTitle ?? p.title ?? 'رزمة',
-    purchased: toNum(p.hoursPurchased ?? p.hours ?? 0),
-    used: toNum(p.hoursUsed ?? p.usedHours ?? 0),
-    price: toNum(p.price ?? 0),
-    category: p.category ?? 'tutoring',
-    active: p.active !== false,
-  }), []);
-
-  // Debug raw vs normalized (optional; comment out if noisy)
-  useEffect(() => {
-    if (purchases.length) {
-      // Debug: purchases data
-    }
-  }, [purchases, normalizePurchase]);
-
-  // ---------- Derived student bundle info (using normalized values) ----------
-  const normalized = purchases.map(normalizePurchase);
-  const activeList = normalized.filter((p) => {
-    if (!p.active) return false;
-    if (userRole === 'student' && track) return matchesTrackCategory(p.category, track);
-    return true;
-  });
-  const totalPurchased = activeList.reduce((s, p) => s + p.purchased, 0);
-  const totalUsed      = activeList.reduce((s, p) => s + p.used, 0);
-  const totalRemaining = Math.max(0, totalPurchased - totalUsed);
   const filteredCourses = studentCourses.filter((c) =>
     userRole === 'student' && track ? matchesTrackCategory(c.category, track) : true
   );
@@ -414,264 +335,6 @@ function HomePage() {
                   </Button>
                 )}
               </Stack>
-            </CardContent>
-          </Card>
-        )}
-        {/* Student bundle status (live, normalized) */}
-        {userRole === 'student' && (
-          <Card 
-            elevation={0} 
-            sx={{ 
-              mb: 3, 
-              borderRadius: 3,
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(248,250,252,0.95))',
-              backdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.1), 0 0 0 1px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.1)',
-              position: 'relative',
-              overflow: 'hidden',
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '4px',
-                background: 'linear-gradient(90deg, #1976d2, #00c853, #1976d2)',
-                backgroundSize: '200% 100%',
-                animation: 'gradientShift 3s ease-in-out infinite',
-              }
-            }}
-          >
-            <CardContent sx={{ direction: 'rtl', p: 3 }}>
-              {/* Header with icon */}
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Box sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 50,
-                  height: 50,
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #1976d2, #00c853)',
-                  mr: 2,
-                  boxShadow: '0 8px 25px rgba(25, 118, 210, 0.3)',
-                  animation: 'pulseIcon 2s ease-in-out infinite',
-                }}>
-                  <Typography sx={{ fontSize: 24, color: 'white' }}>📊</Typography>
-                </Box>
-                <Typography 
-                  variant="h5" 
-                  sx={{ 
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #1976d2, #00c853)',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    letterSpacing: 0.5
-                  }}
-                >
-                  حالتي الحالية
-                </Typography>
-              </Box>
-
-              {activeList.length === 0 ? (
-                <Box sx={{
-                  textAlign: 'center',
-                  py: 3,
-                  px: 2,
-                  borderRadius: 2,
-                  background: 'rgba(25, 118, 210, 0.05)',
-                  border: '1px dashed rgba(25, 118, 210, 0.2)'
-                }}>
-                  <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-                    لا توجد باقات مفعّلة حالياً
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    يمكنك اختيار باقة من صفحة <strong>الرزمات</strong>
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  {/* Summary Cards */}
-                  <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-                    <Box sx={{
-                      flex: 1,
-                      minWidth: 120,
-                      p: 2,
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, rgba(25, 118, 210, 0.1), rgba(0, 200, 83, 0.1))',
-                      border: '1px solid rgba(25, 118, 210, 0.2)',
-                      textAlign: 'center',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 8px 25px rgba(25, 118, 210, 0.2)'
-                      }
-                    }}>
-                      <Typography variant="h4" sx={{ fontWeight: 700, color: '#1976d2', mb: 0.5 }}>
-                        {totalPurchased}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        ساعات مشتراة
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{
-                      flex: 1,
-                      minWidth: 120,
-                      p: 2,
-                      borderRadius: 2,
-                      background: 'linear-gradient(135deg, rgba(255, 152, 0, 0.1), rgba(255, 193, 7, 0.1))',
-                      border: '1px solid rgba(255, 152, 0, 0.2)',
-                      textAlign: 'center',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 8px 25px rgba(255, 152, 0, 0.2)'
-                      }
-                    }}>
-                      <Typography variant="h4" sx={{ fontWeight: 700, color: '#ff9800', mb: 0.5 }}>
-                        {totalUsed}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        ساعات مُستخدمة
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{
-                      flex: 1,
-                      minWidth: 120,
-                      p: 2,
-                      borderRadius: 2,
-                      background: totalRemaining > 0 
-                        ? 'linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(139, 195, 74, 0.1))'
-                        : 'linear-gradient(135deg, rgba(158, 158, 158, 0.1), rgba(189, 189, 189, 0.1))',
-                      border: totalRemaining > 0 
-                        ? '1px solid rgba(76, 175, 80, 0.2)'
-                        : '1px solid rgba(158, 158, 158, 0.2)',
-                      textAlign: 'center',
-                      transition: 'all 0.3s ease',
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: totalRemaining > 0 
-                          ? '0 8px 25px rgba(76, 175, 80, 0.2)'
-                          : '0 8px 25px rgba(158, 158, 158, 0.2)'
-                      }
-                    }}>
-                      <Typography variant="h4" sx={{ 
-                        fontWeight: 700, 
-                        color: totalRemaining > 0 ? '#4caf50' : '#9e9e9e', 
-                        mb: 0.5 
-                      }}>
-                        {totalRemaining}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        ساعات متبقية
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  {/* Progress Bar */}
-                  <Box sx={{ mb: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        التقدم الإجمالي
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {Math.round((totalUsed / totalPurchased) * 100)}%
-                      </Typography>
-                    </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={(totalUsed / totalPurchased) * 100}
-                      sx={{
-                        height: 8,
-                        borderRadius: 4,
-                        backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                        '& .MuiLinearProgress-bar': {
-                          borderRadius: 4,
-                          background: 'linear-gradient(90deg, #1976d2, #00c853)',
-                        }
-                      }}
-                    />
-                  </Box>
-
-                  {/* Bundle Details */}
-                  <Box sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    background: 'rgba(25, 118, 210, 0.05)',
-                    border: '1px solid rgba(25, 118, 210, 0.1)'
-                  }}>
-                    <Typography variant="subtitle1" sx={{ 
-                      fontWeight: 600, 
-                      mb: 2,
-                      color: '#1976d2',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1
-                    }}>
-                      📋 تفاصيل الرزمات
-                    </Typography>
-                    <Stack spacing={1.5}>
-                      {activeList.map(p => {
-                        const rem = Math.max(0, p.purchased - p.used);
-                        const progress = p.purchased > 0 ? (p.used / p.purchased) * 100 : 0;
-                        return (
-                          <Box key={p.id} sx={{
-                            p: 2,
-                            borderRadius: 2,
-                            background: 'rgba(255,255,255,0.7)',
-                            border: '1px solid rgba(25, 118, 210, 0.1)',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              background: 'rgba(255,255,255,0.9)',
-                              transform: 'translateX(-2px)',
-                              boxShadow: '0 4px 12px rgba(25, 118, 210, 0.1)'
-                            }
-                          }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                              <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                                {p.title}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {Math.round(progress)}% مكتمل
-                              </Typography>
-                            </Box>
-                            <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                              <Typography variant="body2" sx={{ color: '#1976d2' }}>
-                                📦 {p.purchased} ساعة
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: '#ff9800' }}>
-                                ⏱️ {p.used} مستخدمة
-                              </Typography>
-                              <Typography variant="body2" sx={{ color: rem > 0 ? '#4caf50' : '#9e9e9e' }}>
-                                ⏳ {rem} متبقية
-                              </Typography>
-                            </Box>
-                            <LinearProgress 
-                              variant="determinate" 
-                              value={progress}
-                              sx={{
-                                height: 4,
-                                borderRadius: 2,
-                                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                                '& .MuiLinearProgress-bar': {
-                                  borderRadius: 2,
-                                  background: progress > 80 
-                                    ? 'linear-gradient(90deg, #ff9800, #f57c00)'
-                                    : 'linear-gradient(90deg, #1976d2, #00c853)',
-                                }
-                              }}
-                            />
-                          </Box>
-                        );
-                      })}
-                    </Stack>
-                  </Box>
-                </>
-              )}
             </CardContent>
           </Card>
         )}

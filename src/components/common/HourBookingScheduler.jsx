@@ -6,15 +6,13 @@ import {
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Person, Email, Phone, EventAvailable, AccessTime, ChevronLeft, ChevronRight
+  EventAvailable, AccessTime, ChevronLeft, ChevronRight
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import { auth } from '../../services/FirebaseService';
-import { onAuthStateChanged } from 'firebase/auth';
 import AppointmentsService, {
   slotConflicts,
   studentHoursOnDay,
-  parseAppointmentStart,
 } from '../../services/AppointmentsService';
 import BookingSettingsService, {
   DEFAULT_BOOKING_SETTINGS,
@@ -30,9 +28,7 @@ import {
 } from '../../services/PrayerTimesService';
 import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
-import BookingCancelPolicy from './BookingCancelPolicy';
-import EnableBookingNotifications from './EnableBookingNotifications';
-import CancelBookingButton from './CancelBookingButton';
+import { canBookOnDay } from '../../services/bookingPolicy';
 import { useLanguage } from '../../context/LanguageContext';
 
 const WEEKDAY_AR = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
@@ -61,7 +57,6 @@ export default function HourBookingScheduler() {
   const [salahWindows, setSalahWindows] = useState([]);
   const [salahNoticeOpen, setSalahNoticeOpen] = useState(false);
   const [pendingSalahPrayers, setPendingSalahPrayers] = useState([]);
-  const [uid, setUid] = useState(() => auth.currentUser?.uid || '');
 
   const rangeEnd = useMemo(
     () => dayjs().startOf('day').add(settings.daysAhead || 90, 'day'),
@@ -81,6 +76,7 @@ export default function HourBookingScheduler() {
       const key = d.format('YYYY-MM-DD');
       if (!workDays.includes(d.day())) continue;
       if (blocked.has(key)) continue;
+      if (!canBookOnDay(key)) continue;
       set.add(key);
     }
     return set;
@@ -97,10 +93,6 @@ export default function HourBookingScheduler() {
     }
     return cells;
   }, [monthCursor]);
-
-  useEffect(() => onAuthStateChanged(auth, (user) => {
-    setUid(user?.uid || '');
-  }), []);
 
   useEffect(() => {
     if (!bookableDaySet.size) return;
@@ -211,21 +203,8 @@ export default function HourBookingScheduler() {
     if (selectedSlot && !availableSlots.includes(selectedSlot)) setSelectedSlot('');
   }, [availableSlots, selectedSlot]);
 
-  const dayHoursUsed = studentHoursOnDay(auth.currentUser?.uid || '', selectedDay, appointments);
   const maxPerDay = Math.min(Number(settings.maxHoursPerDay) || 2, 2);
   const selectedLabel = dayjs(selectedDay);
-  const myUpcoming = useMemo(() => {
-    if (!uid) return [];
-    const now = dayjs();
-    return appointments
-      .filter((a) => a.studentId === uid)
-      .filter((a) => {
-        const start = parseAppointmentStart(a);
-        return !start || !start.isBefore(now);
-      })
-      .sort((a, b) => (parseAppointmentStart(a)?.valueOf() || 0) - (parseAppointmentStart(b)?.valueOf() || 0));
-  }, [appointments, uid]);
-
   const prayersInSlot = (slot, dur = duration) => {
     if (!slot || !salahWindows.length) return [];
     const start = dayjs(`${selectedDay}T${slot}:00`);
@@ -262,6 +241,15 @@ export default function HourBookingScheduler() {
 
       if (!studentEmail) {
         alert(t('أكمل البريد في ملفك الشخصي ثم احجز.', 'השלימו אימייל בפרופיל ואז הזמינו.'));
+        setSaving(false);
+        return;
+      }
+
+      if (!canBookOnDay(selectedDay)) {
+        setError(t(
+          'لا يمكن حجز ساعة في نفس اليوم. الحجز يكون قبل 24 ساعة من يوم المحاضرة.',
+          'אי אפשר להזמין שעה באותו יום. ההזמנה היא 24 שעות לפני יום השיעור.'
+        ));
         setSaving(false);
         return;
       }
@@ -447,6 +435,9 @@ export default function HourBookingScheduler() {
               <Typography sx={{ opacity: 0.9, fontWeight: 600, fontSize: '0.85rem' }}>
                 {t('مفتوح لـ 3 أشهر قادمة · الساعات المحجوزة مخفية', 'פתוח ל־3 חודשים · שעות תפוסות מוסתרות')}
               </Typography>
+              <Typography sx={{ opacity: 0.95, fontWeight: 700, fontSize: '0.85rem', mt: 0.5 }}>
+                {t('إذا أردت رؤية حجزك، اضغط على زر مواعيدي.', 'כדי לראות את ההזמנה, לחצו על הכפתור התורים שלי.')}
+              </Typography>
             </Box>
           </Stack>
           <Button
@@ -466,65 +457,6 @@ export default function HourBookingScheduler() {
       </Box>
 
       <Box sx={{ p: { xs: 2, md: 2.5 } }}>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-          <Chip icon={<Person />} label={profile.name || t('بدون اسم', 'ללא שם')} sx={{ fontWeight: 700 }} />
-          <Chip icon={<Email />} label={profile.email || '—'} sx={{ fontWeight: 700 }} />
-          <Chip
-            icon={<Phone />}
-            label={profile.phone || t('لا يوجد هاتف', 'אין טלפון')}
-            sx={{ fontWeight: 700 }}
-          />
-          {uid && (
-            <Button
-              component={RouterLink}
-              to="/me#settings"
-              variant="contained"
-              size="small"
-              sx={{ fontWeight: 900, borderRadius: 999 }}
-            >
-              {t('اعدادات', 'הגדרות')}
-            </Button>
-          )}
-        </Stack>
-
-        {uid && (
-          <Box sx={{ mb: 2 }}>
-            <Typography fontWeight={900} sx={{ mb: 1 }}>
-              {t('حجوزاتي', 'ההזמנות שלי')}
-            </Typography>
-            <EnableBookingNotifications />
-            {myUpcoming.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('لا يوجد حجز قادم. اختر يوماً وساعة بالأسفل.', 'אין הזמנה קרובה. בחרו יום ושעה למטה.')}
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {myUpcoming.map((b) => {
-                  const start = parseAppointmentStart(b);
-                  return (
-                    <Box
-                      key={b.id}
-                      sx={{
-                        p: 1.25,
-                        borderRadius: 2,
-                        border: '1px solid rgba(198,40,40,0.28)',
-                        bgcolor: 'rgba(198,40,40,0.05)',
-                      }}
-                    >
-                      <Typography fontWeight={800}>
-                        {start ? start.format('YYYY-MM-DD HH:mm') : (b.dateKey || '—')}
-                        {' · '}
-                        {b.duration || b.hours || 1} {t('ساعة', 'שעות')}
-                      </Typography>
-                      <CancelBookingButton booking={b} />
-                    </Box>
-                  );
-                })}
-              </Stack>
-            )}
-          </Box>
-        )}
-
         {saved && (
           <Alert severity="success" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setSaved('')}>
             {saved}
@@ -646,7 +578,10 @@ export default function HourBookingScheduler() {
               })}
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center' }}>
-              {t('يمكنك اختيار أي يوم متاح خلال 3 أشهر', 'ניתן לבחור כל יום פנוי בתוך 3 חודשים')}
+              {t(
+                'لا يُحجز نفس اليوم. أقرب يوم هو بعد 24 ساعة من بداية يوم المحاضرة.',
+                'אי אפשר להזמין לאותו יום. היום הקרוב הוא 24 שעות לפני תחילת יום השיעור.'
+              )}
             </Typography>
           </Paper>
 
@@ -666,16 +601,6 @@ export default function HourBookingScheduler() {
                   ? `${(isHe ? WEEKDAY_HE : WEEKDAY_AR)[selectedLabel.day()]} · ${selectedLabel.format('D/M/YYYY')}`
                   : selectedDay}
               </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={700}>
-                {t(
-                  `${dayHoursUsed} / ${maxPerDay} ساعات محجوزة لك اليوم`,
-                  `${dayHoursUsed} / ${maxPerDay} שעות להזמנה שלכם היום`
-                )}
-              </Typography>
-            </Box>
-
-            <Box sx={{ mb: 2 }}>
-              <BookingCancelPolicy dense />
             </Box>
 
             {settings.salahOffWork?.enabled !== false && (

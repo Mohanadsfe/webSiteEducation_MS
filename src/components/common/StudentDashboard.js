@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import DeleteMyAccount from './DeleteMyAccount';
+import EnableBookingNotifications from './EnableBookingNotifications';
 
 export default function StudentDashboard() {
   const { t } = useLanguage();
@@ -139,6 +140,7 @@ export default function StudentDashboard() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {t('من هنا يمكنك حذف حسابك وكل بياناتك.', 'מכאן אפשר למחוק את החשבון ואת כל הנתונים.')}
         </Typography>
+        <EnableBookingNotifications variant="settings" />
         <DeleteMyAccount />
       </Paper>
     </Container>

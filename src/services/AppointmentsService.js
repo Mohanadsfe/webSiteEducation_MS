@@ -1,4 +1,5 @@
 import {
+  setDoc,
   addDoc,
   collection,
   deleteDoc,
@@ -6,11 +7,14 @@ import {
   getDocs,
   onSnapshot,
   query,
+  increment,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { db } from './FirebaseService';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { bookingDayStart, lessonStart } from './bookingPolicy';
+import { app, auth, db } from '../firebaseConfig';
 
 export const BOOKING_RETENTION_DAYS = 90;
 
@@ -121,8 +125,22 @@ export function studentCanCancelBooking(appt, nowMs = Date.now()) {
 }
 
 function startAtFromPayload(payload) {
+  if (payload?.dateKey && payload?.startTime) {
+    const start = lessonStart(payload.dateKey, payload.startTime);
+    if (start.isValid()) return start.toDate();
+  }
+  const parsed = parseAppointmentStart(payload);
+  return parsed ? parsed.toDate() : undefined;
+}
+
+function bookDayStartFromPayload(payload) {
+  const key = payload?.dateKey;
+  if (typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    return bookingDayStart(key).toDate();
+  }
   const start = parseAppointmentStart(payload);
-  return start ? start.toDate() : undefined;
+  if (!start) return undefined;
+  return bookingDayStart(start.format('YYYY-MM-DD')).toDate();
 }
 
 export function parseAppointmentStart(appt) {
@@ -257,6 +275,7 @@ export class AppointmentsService {
       confirmedAt: createdAt,
       createdAt,
       startAt: startAtFromPayload(payload),
+      bookDayStart: bookDayStartFromPayload(payload),
       expiresAt: bookingExpiresAt(createdAt),
       retentionDays: BOOKING_RETENTION_DAYS,
     });
@@ -310,6 +329,40 @@ export class AppointmentsService {
       patch = { reminderDayBeforeSent: true, reminderDayBeforeSentAt: new Date() };
     }
     await this.updateBooking(bookingId, patch);
+  }
+
+  static async writeCancel(bookingId, uid) {
+    await updateDoc(doc(db, 'appointments', bookingId), {
+      status: 'cancelled',
+      cancelKind: 'student',
+      countsAsUsed: false,
+      cancelledAt: new Date(),
+      cancelledBy: 'student',
+      updatedAt: new Date(),
+    });
+    try {
+      await setDoc(doc(db, 'users', uid), {
+        earlyCancelCount: increment(1),
+        updatedAt: new Date(),
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Cancel saved, counter update failed', e?.code || 'counter');
+    }
+  }
+
+  /** Student cancel at any time. Status cancelled frees the hour on the schedule. */
+  static async cancelMyBooking(bookingId) {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !bookingId) throw new Error('يجب تسجيل الدخول');
+    try {
+      await this.writeCancel(bookingId, uid);
+      return { ok: true };
+    } catch (writeErr) {
+      const functions = getFunctions(app, 'europe-west1');
+      const cancel = httpsCallable(functions, 'cancelMyBooking');
+      const res = await cancel({ bookingId });
+      return res.data || { ok: true, fallback: true, detail: writeErr?.code || 'write' };
+    }
   }
 
   /** Hard-delete from Firestore immediately (owner/teacher). */

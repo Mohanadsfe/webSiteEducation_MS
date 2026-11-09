@@ -99,7 +99,9 @@ service cloud.firestore {
       allow create: if isTeacher() || isOwnerEmail()
         || (signedIn()
             && request.resource.data.studentId == request.auth.uid
-            && request.resource.data.status == 'confirmed');
+            && request.resource.data.status == 'confirmed'
+            && request.resource.data.startAt is timestamp
+            && request.resource.data.startAt > request.time);
       allow update: if isTeacher() || isOwnerEmail()
         // Student may update payment fields / reminders on own booking (cannot change status or identity)
         || (signedIn()
@@ -110,16 +112,17 @@ service cloud.firestore {
                 .hasOnly(['paymentMethod', 'paymentStatus', 'updatedAt',
                           'reminderDayBeforeSent', 'reminderDayBeforeSentAt',
                           'reminderMorningSent', 'reminderMorningSentAt',
-                          'reminderHours5Sent', 'reminderHours5SentAt']));
-      // Owner/teacher may cancel any booking. A student may cancel only her own
-      // booking, and only when the lecture starts more than 24 hours from now.
+                          'reminderHours5Sent', 'reminderHours5SentAt']))
+        // Student may cancel their own booking at any time. The hour then leaves the schedule.
+        || (signedIn()
+            && resource.data.studentId == request.auth.uid
+            && request.resource.data.studentId == resource.data.studentId
+            && request.resource.data.status == 'cancelled');
+      // Owner/teacher may delete any booking. A student cancels through the
+      // cancelMyBooking function so the counter and the 3-time limit stay true.
       // Signed-in users may still purge past 90-day retention.
       allow delete: if isTeacher()
         || isOwnerEmail()
-        || (signedIn()
-            && resource.data.studentId == request.auth.uid
-            && resource.data.startAt is timestamp
-            && resource.data.startAt > request.time + duration.value(24, 'h'))
         || (signedIn()
             && resource.data.expiresAt != null
             && request.time >= resource.data.expiresAt)

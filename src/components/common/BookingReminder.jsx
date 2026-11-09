@@ -7,7 +7,6 @@ import AppointmentsService, {
   isAppointmentExpired,
   parseAppointmentStart,
 } from '../../services/AppointmentsService';
-import NotificationService from '../../services/NotificationService';
 import { useLanguage } from '../../context/LanguageContext';
 
 const LOCAL_KEY = 'ms_booking_reminders_sent';
@@ -42,8 +41,7 @@ function isActiveBooking(appt) {
 
 /**
  * On-site notice while the student has the site open.
- * The scheduled Cloud Function sends the same three reminders with no click:
- * about 36 hours before, about 30 hours before, and about 3 hours before.
+ * The scheduled job emails the student and the owner: 48 hours before, then 3 hours before.
  */
 function reminderKind(appt, now) {
   const start = parseAppointmentStart(appt);
@@ -51,20 +49,12 @@ function reminderKind(appt, now) {
   const minutesLeft = start.diff(now, 'minute');
   if (minutesLeft <= 0) return null;
   if (minutesLeft <= 3 * 60) {
-    if (appt.reminderHours5Sent || appt.reminderHours3Sent || localSeen(appt.id, 'hours3') || localSeen(appt.id, 'hours5')) {
-      return null;
-    }
+    if (appt.reminderHours3CloudSent || localSeen(appt.id, 'hours3')) return null;
     return 'hours3';
   }
-  if (minutesLeft <= 30 * 60) {
-    if (appt.reminderMorningSent || localSeen(appt.id, 'hours30')) return null;
-    return 'hours30';
-  }
-  if (minutesLeft <= 36 * 60) {
-    if (appt.reminderDayBeforeSent || localSeen(appt.id, 'hours36') || localSeen(appt.id, 'day_before')) {
-      return null;
-    }
-    return 'hours36';
+  if (minutesLeft <= 48 * 60) {
+    if (appt.reminderHours48CloudSent || localSeen(appt.id, 'hours48')) return null;
+    return 'hours48';
   }
   return null;
 }
@@ -82,13 +72,6 @@ function showBrowserNotification(title, body) {
     if (Notification.permission === 'granted') {
       // eslint-disable-next-line no-new
       new Notification(title, { body, lang: 'ar' });
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then((p) => {
-        if (p === 'granted') {
-          // eslint-disable-next-line no-new
-          new Notification(title, { body, lang: 'ar' });
-        }
-      });
     }
   } catch {
     /* ignore */
@@ -116,32 +99,14 @@ export default function BookingReminder() {
         const start = parseAppointmentStart(booking);
         const when = start ? start.format('YYYY-MM-DD HH:mm') : (booking.date || '');
 
-        const lead = kind === 'hours36' ? '٣٦' : kind === 'hours30' ? '٣٠' : '٣';
-        const ttl = `تذكير — محاضرتك بعد حوالي ${lead} ساعة`;
-        const msg = `مرحباً! محاضرتك ${when} (${booking.duration || booking.hours || 1} ساعة)، بعد حوالي ${lead} ساعة.\n\nمعهد المعرفة.`;
+        const ttl = kind === 'hours3'
+          ? 'استعد — لديك حجز'
+          : 'تذكير قبل ٤٨ ساعة';
+        const msg = kind === 'hours3'
+          ? `استعد، لديك حجز.\nمحاضرتك ${when}. كن مستعداً.\n\nمعهد المعرفة.`
+          : `محاضرتك ${when}.\nيمكن الإلغاء قبل 24 ساعة من يوم الحجز، وليس قبل 24 ساعة من ساعة المحاضرة.\nإذا لم يُلغَ قبل ذلك يُحتسب الحجز ولا يُرد المبلغ.\n\nمعهد المعرفة.`;
 
         markLocalSeen(booking.id, kind);
-        try {
-          await AppointmentsService.markReminderSent(booking.id, kind);
-        } catch (e) {
-          console.warn('Could not persist reminder flag', e);
-        }
-
-        try {
-          await NotificationService.notifyStudentBookingReminder(
-            {
-              id: booking.id,
-              studentName: booking.studentName,
-              studentEmail: booking.studentEmail,
-              studentPhone: booking.studentPhone,
-              date: when,
-              duration: booking.duration || booking.hours || 1,
-            },
-            kind
-          );
-        } catch (e) {
-          console.warn('Reminder email failed', e);
-        }
 
         showBrowserNotification(ttl, msg);
         if (!cancelled) {
