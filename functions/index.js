@@ -4,8 +4,6 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
-const dayjs = require('dayjs');
-const { isEarlyCancel, LATE_CANCEL_LIMIT } = require('./bookingPolicy');
 const { sendReminderEmails } = require('./mail');
 const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
 const { deleteAccountData } = require('./account');
@@ -262,7 +260,7 @@ exports.deleteMyAccount = onCall(
   }
 );
 
-/** Student cancel. Early cancel is free. A late cancel still counts, and only three are allowed. */
+/** Student cancel at any time. The hour is no longer reserved. */
 exports.cancelMyBooking = onCall(
   {
     region: 'europe-west1',
@@ -286,38 +284,24 @@ exports.cancelMyBooking = onCall(
     try {
       outcome = await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
-        const user = await tx.get(userRef);
         if (!snap.exists) return { error: 'not-found' };
         if (snap.get('studentId') !== request.auth.uid) return { error: 'denied' };
         const status = String(snap.get('status') || '').toLowerCase();
         if (['cancelled', 'canceled', 'rejected', 'revoked'].includes(status)) {
           return { ok: true, kind: 'cancelled', already: true };
         }
-        const data = snap.data() || {};
-        const bookDay = data.bookDayStart && typeof data.bookDayStart.toDate === 'function'
-          ? dayjs(data.bookDayStart.toDate())
-          : null;
-        const start = (bookDay && bookDay.isValid() ? bookDay : null)
-          || parseStart(data.date)
-          || (data.dateKey && data.startTime
-            ? parseStart(`${data.dateKey}T${data.startTime}:00`)
-            : null)
-          || (data.dateKey ? parseStart(`${data.dateKey}T00:00:00`) : null);
-        const early = !!(start && start.isValid() && isEarlyCancel(start, new Date()));
-        const lateCount = Number(user.exists ? user.get('lateCancelCount') || 0 : 0);
-        if (!early && lateCount >= LATE_CANCEL_LIMIT) return { error: 'late-limit' };
         tx.update(ref, {
           status: 'cancelled',
-          cancelKind: early ? 'early' : 'late',
-          countsAsUsed: !early,
+          cancelKind: 'student',
+          countsAsUsed: false,
           cancelledAt: new Date(),
           cancelledBy: 'student',
           updatedAt: new Date(),
         });
         tx.set(userRef, {
-          [early ? 'earlyCancelCount' : 'lateCancelCount']: FieldValue.increment(1),
+          earlyCancelCount: FieldValue.increment(1),
         }, { merge: true });
-        return { ok: true, kind: early ? 'early' : 'late' };
+        return { ok: true, kind: 'student' };
       });
     } catch (e) {
       console.error('Cancel booking failed', e.code || 'cancel-failed');
@@ -325,7 +309,6 @@ exports.cancelMyBooking = onCall(
     }
     if (outcome?.error === 'not-found') throw new HttpsError('not-found', 'الحجز غير موجود');
     if (outcome?.error === 'denied') throw new HttpsError('permission-denied', 'هذا الحجز ليس لك');
-    if (outcome?.error === 'late-limit') throw new HttpsError('failed-precondition', 'LATE_LIMIT');
     return outcome;
   }
 );

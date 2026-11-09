@@ -331,18 +331,18 @@ export class AppointmentsService {
     await this.updateBooking(bookingId, patch);
   }
 
-  static async writeCancel(bookingId, uid, early) {
+  static async writeCancel(bookingId, uid) {
     await updateDoc(doc(db, 'appointments', bookingId), {
       status: 'cancelled',
-      cancelKind: early ? 'early' : 'late',
-      countsAsUsed: !early,
+      cancelKind: 'student',
+      countsAsUsed: false,
       cancelledAt: new Date(),
       cancelledBy: 'student',
       updatedAt: new Date(),
     });
     try {
       await setDoc(doc(db, 'users', uid), {
-        [early ? 'earlyCancelCount' : 'lateCancelCount']: increment(1),
+        earlyCancelCount: increment(1),
         updatedAt: new Date(),
       }, { merge: true });
     } catch (e) {
@@ -350,29 +350,18 @@ export class AppointmentsService {
     }
   }
 
-  /** Student cancel. The server writes the status so the hour returns to the schedule. */
-  static async cancelMyBooking(bookingId, { early = false } = {}) {
+  /** Student cancel at any time. Status cancelled frees the hour on the schedule. */
+  static async cancelMyBooking(bookingId) {
     const uid = auth.currentUser?.uid;
     if (!uid || !bookingId) throw new Error('يجب تسجيل الدخول');
-    const functions = getFunctions(app, 'europe-west1');
-    const cancel = httpsCallable(functions, 'cancelMyBooking');
     try {
+      await this.writeCancel(bookingId, uid);
+      return { ok: true };
+    } catch (writeErr) {
+      const functions = getFunctions(app, 'europe-west1');
+      const cancel = httpsCallable(functions, 'cancelMyBooking');
       const res = await cancel({ bookingId });
-      return res.data || { ok: true };
-    } catch (fnErr) {
-      const code = String(fnErr?.code || '');
-      if (code.includes('failed-precondition')) throw fnErr;
-      try {
-        await this.writeCancel(bookingId, uid, early);
-        return { ok: true, kind: early ? 'early' : 'late' };
-      } catch (writeErr) {
-        const denied = String(writeErr?.code || writeErr?.message || '').includes('permission');
-        if (early && denied) {
-          await this.writeCancel(bookingId, uid, false);
-          return { ok: true, kind: 'late' };
-        }
-        throw writeErr;
-      }
+      return res.data || { ok: true, fallback: true, detail: writeErr?.code || 'write' };
     }
   }
 
