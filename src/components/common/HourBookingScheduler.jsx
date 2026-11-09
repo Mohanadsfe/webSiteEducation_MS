@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Person, Email, Phone, EventAvailable, AccessTime, ChevronLeft, ChevronRight
+  EventAvailable, AccessTime, ChevronLeft, ChevronRight
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import { auth } from '../../services/FirebaseService';
@@ -14,7 +14,6 @@ import { onAuthStateChanged } from 'firebase/auth';
 import AppointmentsService, {
   slotConflicts,
   studentHoursOnDay,
-  parseAppointmentStart,
 } from '../../services/AppointmentsService';
 import BookingSettingsService, {
   DEFAULT_BOOKING_SETTINGS,
@@ -31,7 +30,6 @@ import {
 import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
 import BookingCancelPolicy from './BookingCancelPolicy';
-import CancelBookingButton from './CancelBookingButton';
 import StudentBookingCounts from './StudentBookingCounts';
 import { canBookOnDay } from '../../services/bookingPolicy';
 import { bookingStats } from '../../services/bookingStats';
@@ -217,20 +215,6 @@ export default function HourBookingScheduler() {
   const dayHoursUsed = studentHoursOnDay(auth.currentUser?.uid || '', selectedDay, appointments);
   const maxPerDay = Math.min(Number(settings.maxHoursPerDay) || 2, 2);
   const selectedLabel = dayjs(selectedDay);
-  const myUpcoming = useMemo(() => {
-    if (!uid) return [];
-    const now = dayjs();
-    return appointments
-      .filter((a) => a.studentId === uid)
-      .filter((a) => {
-        const status = String(a.status || '').toLowerCase();
-        if (status === 'cancelled' || status === 'canceled') return false;
-        const start = parseAppointmentStart(a);
-        return !start || !start.isBefore(now);
-      })
-      .sort((a, b) => (parseAppointmentStart(a)?.valueOf() || 0) - (parseAppointmentStart(b)?.valueOf() || 0));
-  }, [appointments, uid]);
-
   const prayersInSlot = (slot, dur = duration) => {
     if (!slot || !salahWindows.length) return [];
     const start = dayjs(`${selectedDay}T${slot}:00`);
@@ -461,6 +445,9 @@ export default function HourBookingScheduler() {
               <Typography sx={{ opacity: 0.9, fontWeight: 600, fontSize: '0.85rem' }}>
                 {t('مفتوح لـ 3 أشهر قادمة · الساعات المحجوزة مخفية', 'פתוח ל־3 חודשים · שעות תפוסות מוסתרות')}
               </Typography>
+              <Typography sx={{ opacity: 0.95, fontWeight: 700, fontSize: '0.85rem', mt: 0.5 }}>
+                {t('إذا أردت رؤية حجزك، اضغط على زر مواعيدي.', 'כדי לראות את ההזמנה, לחצו על הכפתור התורים שלי.')}
+              </Typography>
             </Box>
           </Stack>
           <Button
@@ -480,64 +467,6 @@ export default function HourBookingScheduler() {
       </Box>
 
       <Box sx={{ p: { xs: 2, md: 2.5 } }}>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-          <Chip icon={<Person />} label={profile.name || t('بدون اسم', 'ללא שם')} sx={{ fontWeight: 700 }} />
-          <Chip icon={<Email />} label={profile.email || '—'} sx={{ fontWeight: 700 }} />
-          <Chip
-            icon={<Phone />}
-            label={profile.phone || t('لا يوجد هاتف', 'אין טלפון')}
-            sx={{ fontWeight: 700 }}
-          />
-          {uid && (
-            <Button
-              component={RouterLink}
-              to="/me#settings"
-              variant="contained"
-              size="small"
-              sx={{ fontWeight: 900, borderRadius: 999 }}
-            >
-              {t('اعدادات', 'הגדרות')}
-            </Button>
-          )}
-        </Stack>
-
-        {uid && (
-          <Box sx={{ mb: 2 }}>
-            <Typography fontWeight={900} sx={{ mb: 1 }}>
-              {t('حجوزاتي', 'ההזמנות שלי')}
-            </Typography>
-            {myUpcoming.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('لا يوجد حجز قادم. اختر يوماً وساعة بالأسفل.', 'אין הזמנה קרובה. בחרו יום ושעה למטה.')}
-              </Typography>
-            ) : (
-              <Stack spacing={1}>
-                {myUpcoming.map((b) => {
-                  const start = parseAppointmentStart(b);
-                  return (
-                    <Box
-                      key={b.id}
-                      sx={{
-                        p: 1.25,
-                        borderRadius: 2,
-                        border: '1px solid rgba(198,40,40,0.28)',
-                        bgcolor: 'rgba(198,40,40,0.05)',
-                      }}
-                    >
-                      <Typography fontWeight={800}>
-                        {start ? start.format('YYYY-MM-DD HH:mm') : (b.dateKey || '—')}
-                        {' · '}
-                        {b.duration || b.hours || 1} {t('ساعة', 'שעות')}
-                      </Typography>
-                      <CancelBookingButton booking={b} />
-                    </Box>
-                  );
-                })}
-              </Stack>
-            )}
-          </Box>
-        )}
-
         {saved && (
           <Alert severity="success" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setSaved('')}>
             {saved}
