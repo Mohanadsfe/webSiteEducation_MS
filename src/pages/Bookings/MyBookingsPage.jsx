@@ -20,6 +20,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import UsersService from '../../services/UsersService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
 import StudentBookingCounts from '../../components/common/StudentBookingCounts';
+import StudentBundleStatus from '../../components/common/StudentBundleStatus';
 import { bookingStats } from '../../services/bookingStats';
 
 function statusMeta(status, t) {
@@ -307,6 +308,8 @@ export default function MyBookingsPage() {
             </Button>
           )}
         </Stack>
+
+        {!isOwner && <StudentBundleStatus />}
 
         <Box sx={{ mb: 2.5 }}>
           <BookingCancelPolicy />
