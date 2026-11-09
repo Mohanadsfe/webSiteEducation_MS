@@ -32,6 +32,9 @@ import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
 import BookingCancelPolicy from './BookingCancelPolicy';
 import CancelBookingButton from './CancelBookingButton';
+import StudentBookingCounts from './StudentBookingCounts';
+import { canBookOnDay } from '../../services/bookingPolicy';
+import { bookingStats } from '../../services/bookingStats';
 import { useLanguage } from '../../context/LanguageContext';
 
 const WEEKDAY_AR = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
@@ -80,6 +83,7 @@ export default function HourBookingScheduler() {
       const key = d.format('YYYY-MM-DD');
       if (!workDays.includes(d.day())) continue;
       if (blocked.has(key)) continue;
+      if (!canBookOnDay(key)) continue;
       set.add(key);
     }
     return set;
@@ -219,6 +223,8 @@ export default function HourBookingScheduler() {
     return appointments
       .filter((a) => a.studentId === uid)
       .filter((a) => {
+        const status = String(a.status || '').toLowerCase();
+        if (status === 'cancelled' || status === 'canceled') return false;
         const start = parseAppointmentStart(a);
         return !start || !start.isBefore(now);
       })
@@ -261,6 +267,15 @@ export default function HourBookingScheduler() {
 
       if (!studentEmail) {
         alert(t('أكمل البريد في ملفك الشخصي ثم احجز.', 'השלימו אימייל בפרופיל ואז הזמינו.'));
+        setSaving(false);
+        return;
+      }
+
+      if (!canBookOnDay(selectedDay)) {
+        setError(t(
+          'لا يمكن حجز ساعة في نفس اليوم. الحجز يكون قبل 24 ساعة من يوم المحاضرة.',
+          'אי אפשר להזמין שעה באותו יום. ההזמנה היא 24 שעות לפני יום השיעור.'
+        ));
         setSaving(false);
         return;
       }
@@ -644,7 +659,10 @@ export default function HourBookingScheduler() {
               })}
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'center' }}>
-              {t('يمكنك اختيار أي يوم متاح خلال 3 أشهر', 'ניתן לבחור כל יום פנוי בתוך 3 חודשים')}
+              {t(
+                'لا يُحجز نفس اليوم. أقرب يوم هو بعد 24 ساعة من بداية يوم المحاضرة.',
+                'אי אפשר להזמין לאותו יום. היום הקרוב הוא 24 שעות לפני תחילת יום השיעור.'
+              )}
             </Typography>
           </Paper>
 
@@ -671,6 +689,14 @@ export default function HourBookingScheduler() {
                 )}
               </Typography>
             </Box>
+
+            {uid && (
+              <Box sx={{ mb: 2 }}>
+                <StudentBookingCounts
+                  stats={bookingStats(appointments.filter((a) => a.studentId === uid))}
+                />
+              </Box>
+            )}
 
             <Box sx={{ mb: 2 }}>
               <BookingCancelPolicy dense />

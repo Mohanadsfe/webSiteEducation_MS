@@ -38,6 +38,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import NotificationService from '../../services/NotificationService';
 import { sendStudentNotice, sendNoticeToAllStudents, noticeErrorText } from '../../services/SmsService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
+import StudentBookingCounts from '../../components/common/StudentBookingCounts';
+import { bookingStats } from '../../services/bookingStats';
 import {
   buildStudentLectureReminderMessage,
   buildWhatsAppToPhone,
@@ -798,6 +800,27 @@ export default function BookingManagePage() {
       <Box sx={{ mb: 2 }}>
         <BookingCancelPolicy dense />
       </Box>
+
+      {bookings.length > 0 && (
+        <Stack spacing={1} sx={{ mb: 2 }}>
+          <Typography fontWeight={900}>
+            {t('عداد كل طالب', 'מונה לכל תלמיד')}
+          </Typography>
+          {[...bookings.reduce((map, booking) => {
+            const key = booking.studentId || booking.studentEmail || booking.id;
+            if (!map.has(key)) {
+              map.set(key, {
+                name: booking.studentName || booking.studentEmail || key,
+                list: [],
+              });
+            }
+            map.get(key).list.push(booking);
+            return map;
+          }, new Map()).values()].map((row) => (
+            <StudentBookingCounts key={row.name} name={row.name} stats={bookingStats(row.list)} />
+          ))}
+        </Stack>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2, textAlign: 'right' }} onClose={() => setError('')}>

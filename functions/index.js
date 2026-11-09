@@ -4,6 +4,8 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
+const { isEarlyCancel, LATE_CANCEL_LIMIT } = require('./bookingPolicy');
+const { sendReminderEmails } = require('./mail');
 const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
 const { deleteAccountData } = require('./account');
 const { getAuth } = require('firebase-admin/auth');
@@ -16,9 +18,12 @@ const OWNER_EMAILS = new Set([
 initializeApp();
 
 const FLAG = {
-  hours36: 'reminderHours36CloudSent',
-  hours30: 'reminderHours30CloudSent',
+  hours48: 'reminderHours48CloudSent',
   hours3: 'reminderHours3CloudSent',
+};
+const EMAIL_FLAG = {
+  hours48: 'reminderHours48EmailSent',
+  hours3: 'reminderHours3EmailSent',
 };
 
 async function loadStudentTokens(studentId) {
@@ -150,11 +155,10 @@ exports.sendStudentSms = onCall(
 );
 
 /**
- * Every 15 minutes, with no click. Each lesson is notified three times:
- * 1) About 36 hours before it starts
- * 2) About 30 hours before it starts
- * 3) About 3 hours before it starts
- * Saved in the site, and pushed with Firebase Cloud Messaging if the student allowed notifications.
+ * Every 15 minutes, with no click. Each lesson is emailed twice:
+ * 1) About 48 hours before it starts, with the day-based cancel rule
+ * 2) About 3 hours before it starts, telling the student to be ready
+ * The same note is saved in the site and pushed when the student allowed notifications.
  */
 exports.sendLectureSmsReminders = onSchedule(
   {
@@ -184,26 +188,42 @@ exports.sendLectureSmsReminders = onSchedule(
     for (const job of jobs) {
       const ref = db.collection('appointments').doc(job.id);
       const flag = FLAG[job.kind];
-      const claimed = await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(ref);
-        if (!fresh.exists || fresh.get(flag)) return false;
-        tx.update(ref, {
-          [flag]: true,
-          [`${flag}At`]: new Date(),
+      const emailFlag = EMAIL_FLAG[job.kind];
+      if (!job.emailOnly) {
+        const claimed = await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(ref);
+          if (!fresh.exists || fresh.get(flag)) return false;
+          tx.update(ref, {
+            [flag]: true,
+            [`${flag}At`]: new Date(),
+          });
+          return true;
         });
-        return true;
-      });
-      if (!claimed) continue;
+        if (!claimed) continue;
+        try {
+          const result = await deliverToStudent(job.studentId, reminderMessage(job));
+          console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed);
+        } catch (e) {
+          console.error('Reminder failed', job.id, job.kind, e.message);
+          await ref.update({
+            [flag]: FieldValue.delete(),
+            [`${flag}At`]: FieldValue.delete(),
+          });
+          continue;
+        }
+      }
 
       try {
-        const result = await deliverToStudent(job.studentId, reminderMessage(job));
-        console.log('Reminder stored', job.id, job.kind, 'pushed', result.pushed, 'failed', result.failed);
+        const mailed = await sendReminderEmails(job);
+        console.log('Reminder email', job.id, job.kind, 'sent', mailed.sent);
+        if (mailed.sent > 0) {
+          await ref.update({
+            [emailFlag]: true,
+            [`${emailFlag}At`]: new Date(),
+          });
+        }
       } catch (e) {
-        console.error('Reminder failed', job.id, job.kind, e.message);
-        await ref.update({
-          [flag]: FieldValue.delete(),
-          [`${flag}At`]: FieldValue.delete(),
-        });
+        console.error('Reminder email failed', job.id, job.kind, e.message || 'mail-failed');
       }
     }
   }
@@ -238,5 +258,74 @@ exports.deleteMyAccount = onCall(
     }
     console.log('Account deleted');
     return { ok: true };
+  }
+);
+
+/** Student cancel. Early cancel is free. A late cancel still counts, and only three are allowed. */
+exports.cancelMyBooking = onCall(
+  {
+    region: 'europe-west1',
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول');
+    }
+    const bookingId = String(request.data?.bookingId || '').trim();
+    if (!bookingId) {
+      throw new HttpsError('invalid-argument', 'اختر الحجز');
+    }
+    const db = getFirestore();
+    const ref = db.collection('appointments').doc(bookingId);
+    const userRef = db.collection('users').doc(request.auth.uid);
+    try {
+      return await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const user = await tx.get(userRef);
+        if (!snap.exists) throw new HttpsError('not-found', 'الحجز غير موجود');
+        if (snap.get('studentId') !== request.auth.uid) {
+          throw new HttpsError('permission-denied', 'هذا الحجز ليس لك');
+        }
+        const status = String(snap.get('status') || '').toLowerCase();
+        if (['cancelled', 'canceled', 'rejected', 'revoked'].includes(status)) {
+          throw new HttpsError('failed-precondition', 'الحجز ملغى');
+        }
+        const data = snap.data() || {};
+        const start = parseStart(data.date)
+          || (data.dateKey && data.startTime
+            ? parseStart(`${data.dateKey}T${data.startTime}:00`)
+            : null);
+        if (!start) throw new HttpsError('failed-precondition', 'موعد الحجز غير واضح');
+        const early = isEarlyCancel(start, new Date());
+        const lateCount = Number(user.exists ? user.get('lateCancelCount') || 0 : 0);
+        if (!early && lateCount >= LATE_CANCEL_LIMIT) {
+          throw new HttpsError('failed-precondition', 'LATE_LIMIT');
+        }
+        tx.update(ref, {
+          status: 'cancelled',
+          cancelKind: early ? 'early' : 'late',
+          countsAsUsed: !early,
+          cancelledAt: new Date(),
+          cancelledBy: 'student',
+        });
+        if (early) {
+          tx.set(userRef, { earlyCancelCount: FieldValue.increment(1) }, { merge: true });
+        } else {
+          tx.set(userRef, { lateCancelCount: lateCount + 1 }, { merge: true });
+        }
+        return {
+          ok: true,
+          kind: early ? 'early' : 'late',
+          lateCancelCount: early ? lateCount : lateCount + 1,
+        };
+      });
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error('Cancel booking failed', e.code || 'cancel-failed');
+      throw new HttpsError('internal', 'تعذر إلغاء الحجز');
+    }
   }
 );

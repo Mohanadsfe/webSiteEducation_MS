@@ -10,7 +10,9 @@ import {
   where,
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
-import { db } from './FirebaseService';
+import { bookingDayStart } from './bookingPolicy';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { auth, db } from './FirebaseService';
 
 export const BOOKING_RETENTION_DAYS = 90;
 
@@ -123,6 +125,16 @@ export function studentCanCancelBooking(appt, nowMs = Date.now()) {
 function startAtFromPayload(payload) {
   const start = parseAppointmentStart(payload);
   return start ? start.toDate() : undefined;
+}
+
+function bookDayStartFromPayload(payload) {
+  const key = payload?.dateKey;
+  if (typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    return bookingDayStart(key).toDate();
+  }
+  const start = parseAppointmentStart(payload);
+  if (!start) return undefined;
+  return bookingDayStart(start.format('YYYY-MM-DD')).toDate();
 }
 
 export function parseAppointmentStart(appt) {
@@ -257,6 +269,7 @@ export class AppointmentsService {
       confirmedAt: createdAt,
       createdAt,
       startAt: startAtFromPayload(payload),
+      bookDayStart: bookDayStartFromPayload(payload),
       expiresAt: bookingExpiresAt(createdAt),
       retentionDays: BOOKING_RETENTION_DAYS,
     });
@@ -310,6 +323,14 @@ export class AppointmentsService {
       patch = { reminderDayBeforeSent: true, reminderDayBeforeSentAt: new Date() };
     }
     await this.updateBooking(bookingId, patch);
+  }
+
+  /** Student cancel. Keeps the record so the counters stay correct. */
+  static async cancelMyBooking(bookingId) {
+    const functions = getFunctions(auth.app, 'europe-west1');
+    const cancel = httpsCallable(functions, 'cancelMyBooking');
+    const res = await cancel({ bookingId });
+    return res.data;
   }
 
   /** Hard-delete from Firestore immediately (owner/teacher). */

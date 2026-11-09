@@ -19,6 +19,8 @@ import { isOwnerAdminEmail } from '../../constants/admin';
 import { useLanguage } from '../../context/LanguageContext';
 import UsersService from '../../services/UsersService';
 import BookingCancelPolicy from '../../components/common/BookingCancelPolicy';
+import StudentBookingCounts from '../../components/common/StudentBookingCounts';
+import { bookingStats } from '../../services/bookingStats';
 
 function statusMeta(status, t) {
   const s = String(status || '').toLowerCase();
@@ -309,6 +311,29 @@ export default function MyBookingsPage() {
         <Box sx={{ mb: 2.5 }}>
           <BookingCancelPolicy />
         </Box>
+
+        <Stack spacing={1} sx={{ mb: 2.5 }}>
+          {(isOwner
+            ? [...bookings.reduce((map, booking) => {
+              const key = booking.studentId || booking.studentEmail || booking.id;
+              if (!map.has(key)) {
+                map.set(key, {
+                  name: booking.studentName || booking.studentEmail || key,
+                  list: [],
+                });
+              }
+              map.get(key).list.push(booking);
+              return map;
+            }, new Map()).values()]
+            : [{ name: '', list: bookings }]
+          ).map((row) => (
+            <StudentBookingCounts
+              key={row.name || 'me'}
+              name={isOwner ? row.name : ''}
+              stats={bookingStats(row.list)}
+            />
+          ))}
+        </Stack>
 
 
         <Box

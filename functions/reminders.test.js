@@ -20,40 +20,41 @@ function booking(overrides) {
   };
 }
 
-test('a lesson is reminded at 36 hours, 30 hours, and 3 hours, once each', () => {
+test('a lesson is reminded at 48 hours and at 3 hours, once each', () => {
   const lecture = booking();
-  const tooEarly = selectSmsJobs([lecture], new Date('2026-10-27T01:00:00Z'));
+  const tooEarly = selectSmsJobs([lecture], new Date('2026-10-26T13:00:00Z'));
   assert.equal(tooEarly.length, 0);
 
-  const at36 = selectSmsJobs([lecture], new Date('2026-10-27T03:00:00Z'));
-  assert.equal(at36.length, 1);
-  assert.equal(at36[0].kind, 'hours36');
-  assert.equal(at36[0].when, '2026-10-28 16:00');
-  assert.match(at36[0].body, /قبل 24 ساعة/);
-  assert.match(at36[0].body, /لن يُقبل الإلغاء/);
+  const at48 = selectSmsJobs([lecture], new Date('2026-10-26T15:00:00Z'));
+  assert.equal(at48.length, 1);
+  assert.equal(at48[0].kind, 'hours48');
+  assert.equal(at48[0].when, '2026-10-28 16:00');
+  assert.match(at48[0].body, /يوم الحجز/);
+  assert.match(at48[0].body, /ليس قبل 24 ساعة من ساعة المحاضرة/);
 
-  const at30 = selectSmsJobs([lecture], new Date('2026-10-27T09:00:00Z'));
-  assert.equal(at30.length, 1);
-  assert.equal(at30[0].kind, 'hours30');
+  const still48 = selectSmsJobs([lecture], new Date('2026-10-27T09:00:00Z'));
+  assert.equal(still48.length, 1);
+  assert.equal(still48[0].kind, 'hours48');
 
   const at3 = selectSmsJobs([lecture], new Date('2026-10-28T12:00:00Z'));
   assert.equal(at3.length, 1);
   assert.equal(at3[0].kind, 'hours3');
+  assert.match(at3[0].body, /استعد/);
 });
 
-test('a passed reminder is not sent late, and a sent one is not repeated', () => {
-  const missed36 = selectSmsJobs(
-    [booking()],
-    new Date('2026-10-27T09:00:00Z')
-  );
-  assert.equal(missed36.length, 1);
-  assert.equal(missed36[0].kind, 'hours30');
-
+test('a sent reminder is not repeated, and a missed email is retried without a new push', () => {
   const again = selectSmsJobs(
-    [booking({ reminderHours30CloudSent: true })],
+    [booking({ reminderHours48CloudSent: true, reminderHours48EmailSent: true })],
     new Date('2026-10-27T09:00:00Z')
   );
   assert.equal(again.length, 0);
+
+  const emailRetry = selectSmsJobs(
+    [booking({ reminderHours48CloudSent: true })],
+    new Date('2026-10-27T09:00:00Z')
+  );
+  assert.equal(emailRetry.length, 1);
+  assert.equal(emailRetry[0].emailOnly, true);
 });
 
 test('three-hour reminder uses that booking student and is not repeated', () => {
@@ -70,7 +71,7 @@ test('three-hour reminder uses that booking student and is not repeated', () => 
   assert.equal(jobs[0].when, '2026-10-27 12:00');
 
   const again = selectSmsJobs([
-    { ...lecture, reminderHours3CloudSent: true },
+    { ...lecture, reminderHours3CloudSent: true, reminderHours3EmailSent: true },
   ], now);
   assert.equal(again.length, 0);
 });
