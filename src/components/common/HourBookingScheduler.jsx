@@ -10,7 +10,6 @@ import {
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import { auth } from '../../services/FirebaseService';
-import { onAuthStateChanged } from 'firebase/auth';
 import AppointmentsService, {
   slotConflicts,
   studentHoursOnDay,
@@ -29,10 +28,7 @@ import {
 } from '../../services/PrayerTimesService';
 import { resolveStudentBookingIdentity } from '../../utils/studentIdentity';
 import NotificationService from '../../services/NotificationService';
-import BookingCancelPolicy from './BookingCancelPolicy';
-import StudentBookingCounts from './StudentBookingCounts';
 import { canBookOnDay } from '../../services/bookingPolicy';
-import { bookingStats } from '../../services/bookingStats';
 import { useLanguage } from '../../context/LanguageContext';
 
 const WEEKDAY_AR = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
@@ -61,7 +57,6 @@ export default function HourBookingScheduler() {
   const [salahWindows, setSalahWindows] = useState([]);
   const [salahNoticeOpen, setSalahNoticeOpen] = useState(false);
   const [pendingSalahPrayers, setPendingSalahPrayers] = useState([]);
-  const [uid, setUid] = useState(() => auth.currentUser?.uid || '');
 
   const rangeEnd = useMemo(
     () => dayjs().startOf('day').add(settings.daysAhead || 90, 'day'),
@@ -98,10 +93,6 @@ export default function HourBookingScheduler() {
     }
     return cells;
   }, [monthCursor]);
-
-  useEffect(() => onAuthStateChanged(auth, (user) => {
-    setUid(user?.uid || '');
-  }), []);
 
   useEffect(() => {
     if (!bookableDaySet.size) return;
@@ -212,7 +203,6 @@ export default function HourBookingScheduler() {
     if (selectedSlot && !availableSlots.includes(selectedSlot)) setSelectedSlot('');
   }, [availableSlots, selectedSlot]);
 
-  const dayHoursUsed = studentHoursOnDay(auth.currentUser?.uid || '', selectedDay, appointments);
   const maxPerDay = Math.min(Number(settings.maxHoursPerDay) || 2, 2);
   const selectedLabel = dayjs(selectedDay);
   const prayersInSlot = (slot, dur = duration) => {
@@ -611,24 +601,6 @@ export default function HourBookingScheduler() {
                   ? `${(isHe ? WEEKDAY_HE : WEEKDAY_AR)[selectedLabel.day()]} · ${selectedLabel.format('D/M/YYYY')}`
                   : selectedDay}
               </Typography>
-              <Typography variant="caption" color="text.secondary" fontWeight={700}>
-                {t(
-                  `${dayHoursUsed} / ${maxPerDay} ساعات محجوزة لك اليوم`,
-                  `${dayHoursUsed} / ${maxPerDay} שעות להזמנה שלכם היום`
-                )}
-              </Typography>
-            </Box>
-
-            {uid && (
-              <Box sx={{ mb: 2 }}>
-                <StudentBookingCounts
-                  stats={bookingStats(appointments.filter((a) => a.studentId === uid))}
-                />
-              </Box>
-            )}
-
-            <Box sx={{ mb: 2 }}>
-              <BookingCancelPolicy dense />
             </Box>
 
             {settings.salahOffWork?.enabled !== false && (
