@@ -12,8 +12,9 @@ import {
   where,
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { bookingDayStart, lessonStart } from './bookingPolicy';
-import { auth, db } from './FirebaseService';
+import { app, auth, db } from '../firebaseConfig';
 
 export const BOOKING_RETENTION_DAYS = 90;
 
@@ -330,10 +331,7 @@ export class AppointmentsService {
     await this.updateBooking(bookingId, patch);
   }
 
-  /** Student cancel. Keeps the record so the counters stay correct. */
-  static async cancelMyBooking(bookingId, { early = false } = {}) {
-    const uid = auth.currentUser?.uid;
-    if (!uid || !bookingId) throw new Error('يجب تسجيل الدخول');
+  static async writeCancel(bookingId, uid, early) {
     await updateDoc(doc(db, 'appointments', bookingId), {
       status: 'cancelled',
       cancelKind: early ? 'early' : 'late',
@@ -350,7 +348,32 @@ export class AppointmentsService {
     } catch (e) {
       console.warn('Cancel saved, counter update failed', e?.code || 'counter');
     }
-    return { ok: true, kind: early ? 'early' : 'late' };
+  }
+
+  /** Student cancel. The server writes the status so the hour returns to the schedule. */
+  static async cancelMyBooking(bookingId, { early = false } = {}) {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !bookingId) throw new Error('يجب تسجيل الدخول');
+    const functions = getFunctions(app, 'europe-west1');
+    const cancel = httpsCallable(functions, 'cancelMyBooking');
+    try {
+      const res = await cancel({ bookingId });
+      return res.data || { ok: true };
+    } catch (fnErr) {
+      const code = String(fnErr?.code || '');
+      if (code.includes('failed-precondition')) throw fnErr;
+      try {
+        await this.writeCancel(bookingId, uid, early);
+        return { ok: true, kind: early ? 'early' : 'late' };
+      } catch (writeErr) {
+        const denied = String(writeErr?.code || writeErr?.message || '').includes('permission');
+        if (early && denied) {
+          await this.writeCancel(bookingId, uid, false);
+          return { ok: true, kind: 'late' };
+        }
+        throw writeErr;
+      }
+    }
   }
 
   /** Hard-delete from Firestore immediately (owner/teacher). */

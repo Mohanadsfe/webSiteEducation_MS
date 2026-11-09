@@ -4,6 +4,7 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { selectSmsJobs, parseStart } = require('./reminders');
+const dayjs = require('dayjs');
 const { isEarlyCancel, LATE_CANCEL_LIMIT } = require('./bookingPolicy');
 const { sendReminderEmails } = require('./mail');
 const { noticeMessage, reminderMessage, sendToTokens, tokensFromDocs } = require('./fcm');
@@ -281,51 +282,50 @@ exports.cancelMyBooking = onCall(
     const db = getFirestore();
     const ref = db.collection('appointments').doc(bookingId);
     const userRef = db.collection('users').doc(request.auth.uid);
+    let outcome;
     try {
-      return await db.runTransaction(async (tx) => {
+      outcome = await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         const user = await tx.get(userRef);
-        if (!snap.exists) throw new HttpsError('not-found', 'الحجز غير موجود');
-        if (snap.get('studentId') !== request.auth.uid) {
-          throw new HttpsError('permission-denied', 'هذا الحجز ليس لك');
-        }
+        if (!snap.exists) return { error: 'not-found' };
+        if (snap.get('studentId') !== request.auth.uid) return { error: 'denied' };
         const status = String(snap.get('status') || '').toLowerCase();
         if (['cancelled', 'canceled', 'rejected', 'revoked'].includes(status)) {
-          throw new HttpsError('failed-precondition', 'الحجز ملغى');
+          return { ok: true, kind: 'cancelled', already: true };
         }
         const data = snap.data() || {};
-        const start = parseStart(data.date)
+        const bookDay = data.bookDayStart && typeof data.bookDayStart.toDate === 'function'
+          ? dayjs(data.bookDayStart.toDate())
+          : null;
+        const start = (bookDay && bookDay.isValid() ? bookDay : null)
+          || parseStart(data.date)
           || (data.dateKey && data.startTime
             ? parseStart(`${data.dateKey}T${data.startTime}:00`)
-            : null);
-        if (!start) throw new HttpsError('failed-precondition', 'موعد الحجز غير واضح');
-        const early = isEarlyCancel(start, new Date());
+            : null)
+          || (data.dateKey ? parseStart(`${data.dateKey}T00:00:00`) : null);
+        const early = !!(start && start.isValid() && isEarlyCancel(start, new Date()));
         const lateCount = Number(user.exists ? user.get('lateCancelCount') || 0 : 0);
-        if (!early && lateCount >= LATE_CANCEL_LIMIT) {
-          throw new HttpsError('failed-precondition', 'LATE_LIMIT');
-        }
+        if (!early && lateCount >= LATE_CANCEL_LIMIT) return { error: 'late-limit' };
         tx.update(ref, {
           status: 'cancelled',
           cancelKind: early ? 'early' : 'late',
           countsAsUsed: !early,
           cancelledAt: new Date(),
           cancelledBy: 'student',
+          updatedAt: new Date(),
         });
-        if (early) {
-          tx.set(userRef, { earlyCancelCount: FieldValue.increment(1) }, { merge: true });
-        } else {
-          tx.set(userRef, { lateCancelCount: lateCount + 1 }, { merge: true });
-        }
-        return {
-          ok: true,
-          kind: early ? 'early' : 'late',
-          lateCancelCount: early ? lateCount : lateCount + 1,
-        };
+        tx.set(userRef, {
+          [early ? 'earlyCancelCount' : 'lateCancelCount']: FieldValue.increment(1),
+        }, { merge: true });
+        return { ok: true, kind: early ? 'early' : 'late' };
       });
     } catch (e) {
-      if (e instanceof HttpsError) throw e;
       console.error('Cancel booking failed', e.code || 'cancel-failed');
       throw new HttpsError('internal', 'تعذر إلغاء الحجز');
     }
+    if (outcome?.error === 'not-found') throw new HttpsError('not-found', 'الحجز غير موجود');
+    if (outcome?.error === 'denied') throw new HttpsError('permission-denied', 'هذا الحجز ليس لك');
+    if (outcome?.error === 'late-limit') throw new HttpsError('failed-precondition', 'LATE_LIMIT');
+    return outcome;
   }
 );

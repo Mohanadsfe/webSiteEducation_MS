@@ -131,15 +131,12 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys()
                 .hasOnly(['status', 'cancelKind', 'countsAsUsed', 'cancelledAt', 'cancelledBy', 'updatedAt'])
             && (
-              (request.resource.data.cancelKind == 'early'
-                && (
-                  (resource.data.bookDayStart is timestamp
-                    && resource.data.bookDayStart > request.time + duration.value(24, 'h'))
-                  || (!(resource.data.bookDayStart is timestamp)
-                    && resource.data.startAt is timestamp
-                    && resource.data.startAt > request.time + duration.value(24, 'h'))
-                ))
-              || (request.resource.data.cancelKind == 'late' && lateCancelsUsed() < 3)
+              (resource.data.bookDayStart is timestamp
+                && resource.data.bookDayStart > request.time + duration.value(24, 'h'))
+              || (!(resource.data.bookDayStart is timestamp)
+                && resource.data.startAt is timestamp
+                && resource.data.startAt > request.time + duration.value(24, 'h'))
+              || lateCancelsUsed() < 3
             ));
       // Owner/teacher may delete any booking. A student cancels through the
       // cancelMyBooking function so the counter and the 3-time limit stay true.
