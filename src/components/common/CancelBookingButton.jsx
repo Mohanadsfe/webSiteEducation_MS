@@ -3,6 +3,7 @@ import {
   Button, Dialog, DialogTitle, DialogContent, DialogActions, Typography,
 } from '@mui/material';
 import { doc, onSnapshot } from 'firebase/firestore';
+import dayjs from 'dayjs';
 import { auth, db } from '../../services/FirebaseService';
 import AppointmentsService, { parseAppointmentStart } from '../../services/AppointmentsService';
 import { isEarlyCancel, LATE_CANCEL_LIMIT } from '../../services/bookingPolicy';
@@ -30,7 +31,15 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
 
   const lateUsed = Math.max(storedLate, 0);
   const start = parseAppointmentStart(booking);
-  const early = isEarlyCancel(start);
+  const storedDay = (() => {
+    const raw = booking?.bookDayStart;
+    if (!raw) return null;
+    if (typeof raw.toDate === 'function') return dayjs(raw.toDate());
+    if (raw instanceof Date || typeof raw === 'string' || typeof raw === 'number') return dayjs(raw);
+    if (typeof raw === 'object' && typeof raw.seconds === 'number') return dayjs(raw.seconds * 1000);
+    return null;
+  })();
+  const early = isEarlyCancel(storedDay?.isValid() ? storedDay : start);
 
   const openWhatsApp = () => {
     const when = start ? start.format('YYYY-MM-DD HH:mm') : '';
@@ -46,7 +55,7 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
     setBusy(true);
     setError('');
     try {
-      await AppointmentsService.cancelMyBooking(booking.id);
+      await AppointmentsService.cancelMyBooking(booking.id, { early });
       setOpen(false);
       onCancelled?.(booking.id);
     } catch (e) {
@@ -55,6 +64,11 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
       if (code.includes('failed-precondition') && message.includes('LATE_LIMIT')) {
         setMode('limit');
         setOpen(true);
+      } else if (code.includes('permission-denied') || message.includes('permission')) {
+        setError(t(
+          'لم يُلغَ الحجز. إذا بقي أقل من ٢٤ ساعة على بدء يوم الحجز واستخدمت ثلاث مرات، الإلغاء يكون من المالك فقط.',
+          'ההזמנה לא בוטלה. אם נותרו פחות מ-24 שעות לתחילת יום ההזמנה והשתמשתם בשלוש פעמים, הביטול הוא דרך הבעלים בלבד.'
+        ));
       } else {
         setError(message || t('فشل الإلغاء', 'הביטול נכשל'));
       }
@@ -63,23 +77,14 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
     }
   };
 
-  const cancel = async () => {
+  const cancel = () => {
     if (!early && lateUsed >= LATE_CANCEL_LIMIT) {
       setMode('limit');
       setOpen(true);
       return;
     }
-    if (!early) {
-      setMode('late');
-      setOpen(true);
-      return;
-    }
-    const ok = window.confirm(t(
-      'إلغاء هذا الحجز؟ ستعود الساعة للجدول ولن يُحتسب هذا الحجز.',
-      'לבטל הזמנה זו? השעה תחזור ללוח וההזמנה לא תיספר.'
-    ));
-    if (!ok) return;
-    await runCancel();
+    setMode(early ? 'early' : 'late');
+    setOpen(true);
   };
 
   const status = String(booking?.status || '').toLowerCase();
@@ -106,20 +111,32 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
         <DialogTitle sx={{ fontWeight: 900 }}>
           {mode === 'limit'
             ? t('الإلغاء من خلال المالك', 'הביטול דרך הבעלים')
-            : t('إلغاء متأخر', 'ביטול מאוחר')}
+            : mode === 'early'
+              ? t('إلغاء الحجز', 'ביטול ההזמנה')
+              : t('إلغاء متأخر', 'ביטול מאוחר')}
         </DialogTitle>
         <DialogContent>
-          <Typography sx={{ lineHeight: 1.9 }}>
+          <Typography sx={{ lineHeight: 1.9, whiteSpace: 'pre-line' }}>
             {mode === 'limit'
               ? t(
                 'استخدمت ثلاث مرات الإلغاء المتأخر. بعد ذلك لا يمكن الإلغاء من الموقع، ويكون الإلغاء من خلال المالك فقط.',
                 'השתמשתם בשלוש פעמים הביטול המאוחר. אחר כך אי אפשר לבטל באתר, והביטול הוא דרך הבעלים בלבד.'
               )
+              : mode === 'early'
+                ? t(
+                  'ما زال أكثر من ٢٤ ساعة قبل بدء يوم الحجز. ستعود الساعة للجدول ولن يُحتسب هذا الحجز.',
+                  'נותרו יותר מ-24 שעות לפני תחילת יום ההזמנה. השעה תחזור ללוח וההזמנה לא תיספר.'
+                )
               : t(
                 `${LATE_MESSAGE}\n\nهذه المرة ${lateUsed + 1} من ${LATE_CANCEL_LIMIT}.`,
                 `ההזמנה תיספר מראש. אי אפשר לקבל את הכסף חזרה, אבל ההזמנה נשארת שלך ולא הולכת לאיבוד. יש שלוש פעמים כאלה, ואחר כך רק הבעלים יכול לבטל.\n\nזו פעם ${lateUsed + 1} מתוך ${LATE_CANCEL_LIMIT}.`
               )}
           </Typography>
+          {error ? (
+            <Typography color="error" sx={{ display: 'block', mt: 1.5, fontWeight: 800 }}>
+              {error}
+            </Typography>
+          ) : null}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setOpen(false)} sx={{ fontWeight: 800 }}>
@@ -131,7 +148,9 @@ export default function CancelBookingButton({ booking, fullWidth = true, onCance
             </Button>
           ) : (
             <Button variant="contained" color="error" disabled={busy} onClick={runCancel} sx={{ fontWeight: 900 }}>
-              {t('متابعة الإلغاء', 'המשך ביטול')}
+              {mode === 'early'
+                ? t('تأكيد الإلغاء', 'אישור הביטול')
+                : t('متابعة الإلغاء', 'המשך ביטול')}
             </Button>
           )}
         </DialogActions>

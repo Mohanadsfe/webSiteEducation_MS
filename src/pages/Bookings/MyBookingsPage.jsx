@@ -40,7 +40,12 @@ function statusMeta(status, t) {
   };
 }
 
-function BookingCard({ booking, isOwner, t, onDelete }) {
+function isCancelledBooking(booking) {
+  const status = String(booking?.status || '').toLowerCase();
+  return status === 'cancelled' || status === 'canceled' || status === 'rejected' || status === 'revoked';
+}
+
+function BookingCard({ booking, isOwner, t, onDelete, onCancelled }) {
   const start = parseAppointmentStart(booking);
   const left = daysUntilExpiry(booking);
   const status = statusMeta(booking.status, t);
@@ -131,7 +136,7 @@ function BookingCard({ booking, isOwner, t, onDelete }) {
         </Stack>
 
         {!isOwner && (
-          <CancelBookingButton booking={booking} />
+          <CancelBookingButton booking={booking} onCancelled={onCancelled} />
         )}
 
         {isOwner && (
@@ -241,34 +246,39 @@ export default function MyBookingsPage() {
     };
   }, [navigate, t]);
 
+  const listed = useMemo(
+    () => (isOwner ? bookings : bookings.filter((b) => !isCancelledBooking(b))),
+    [bookings, isOwner]
+  );
+
   const counts = useMemo(() => {
     const now = dayjs();
     let upcoming = 0;
     let past = 0;
-    bookings.forEach((b) => {
+    listed.forEach((b) => {
       const start = parseAppointmentStart(b);
       if (start && start.isBefore(now)) past += 1;
       else upcoming += 1;
     });
-    return { upcoming, past, all: bookings.length };
-  }, [bookings]);
+    return { upcoming, past, all: listed.length };
+  }, [listed]);
 
   const visible = useMemo(() => {
     const now = dayjs();
-    if (filter === 'all') return [...bookings].reverse();
+    if (filter === 'all') return [...listed].reverse();
     if (filter === 'past') {
-      return bookings
+      return listed
         .filter((b) => {
           const start = parseAppointmentStart(b);
           return start && start.isBefore(now);
         })
         .reverse();
     }
-    return bookings.filter((b) => {
+    return listed.filter((b) => {
       const start = parseAppointmentStart(b);
       return !start || !start.isBefore(now);
     });
-  }, [bookings, filter]);
+  }, [listed, filter]);
 
   return (
     <Box
@@ -459,6 +469,11 @@ export default function MyBookingsPage() {
                 isOwner={isOwner}
                 t={t}
                 onDelete={isOwner ? deleteBookingNow : undefined}
+                onCancelled={(id) => {
+                  setBookings((list) => list.map((item) => (
+                    item.id === id ? { ...item, status: 'cancelled' } : item
+                  )));
+                }}
               />
             ))}
           </Stack>

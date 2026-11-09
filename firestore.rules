@@ -31,6 +31,14 @@ service cloud.firestore {
         get(/databases/$(database)/documents/enrollments/$(request.auth.uid + "_" + courseId)).data.status == "active";
     }
 
+    function lateCancelsUsed() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userData().keys().hasAny(['lateCancelCount'])
+        && (userData().lateCancelCount is int || userData().lateCancelCount is float)
+        ? userData().lateCancelCount
+        : 0;
+    }
+
     match /users/{uid} {
       allow read: if true;
       allow create: if signedIn();
@@ -112,7 +120,27 @@ service cloud.firestore {
                 .hasOnly(['paymentMethod', 'paymentStatus', 'updatedAt',
                           'reminderDayBeforeSent', 'reminderDayBeforeSentAt',
                           'reminderMorningSent', 'reminderMorningSentAt',
-                          'reminderHours5Sent', 'reminderHours5SentAt']));
+                          'reminderHours5Sent', 'reminderHours5SentAt']))
+        // Student cancel. Free only when more than 24 hours remain before the booking day.
+        // After that, three late cancels are allowed, then only the owner.
+        || (signedIn()
+            && resource.data.studentId == request.auth.uid
+            && request.resource.data.studentId == resource.data.studentId
+            && request.resource.data.status == 'cancelled'
+            && resource.data.status != 'cancelled'
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status', 'cancelKind', 'countsAsUsed', 'cancelledAt', 'cancelledBy', 'updatedAt'])
+            && (
+              (request.resource.data.cancelKind == 'early'
+                && (
+                  (resource.data.bookDayStart is timestamp
+                    && resource.data.bookDayStart > request.time + duration.value(24, 'h'))
+                  || (!(resource.data.bookDayStart is timestamp)
+                    && resource.data.startAt is timestamp
+                    && resource.data.startAt > request.time + duration.value(24, 'h'))
+                ))
+              || (request.resource.data.cancelKind == 'late' && lateCancelsUsed() < 3)
+            ));
       // Owner/teacher may delete any booking. A student cancels through the
       // cancelMyBooking function so the counter and the 3-time limit stay true.
       // Signed-in users may still purge past 90-day retention.

@@ -1,4 +1,5 @@
 import {
+  setDoc,
   addDoc,
   collection,
   deleteDoc,
@@ -6,12 +7,12 @@ import {
   getDocs,
   onSnapshot,
   query,
+  increment,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import dayjs from 'dayjs';
 import { bookingDayStart, lessonStart } from './bookingPolicy';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth, db } from './FirebaseService';
 
 export const BOOKING_RETENTION_DAYS = 90;
@@ -330,11 +331,26 @@ export class AppointmentsService {
   }
 
   /** Student cancel. Keeps the record so the counters stay correct. */
-  static async cancelMyBooking(bookingId) {
-    const functions = getFunctions(auth.app, 'europe-west1');
-    const cancel = httpsCallable(functions, 'cancelMyBooking');
-    const res = await cancel({ bookingId });
-    return res.data;
+  static async cancelMyBooking(bookingId, { early = false } = {}) {
+    const uid = auth.currentUser?.uid;
+    if (!uid || !bookingId) throw new Error('يجب تسجيل الدخول');
+    await updateDoc(doc(db, 'appointments', bookingId), {
+      status: 'cancelled',
+      cancelKind: early ? 'early' : 'late',
+      countsAsUsed: !early,
+      cancelledAt: new Date(),
+      cancelledBy: 'student',
+      updatedAt: new Date(),
+    });
+    try {
+      await setDoc(doc(db, 'users', uid), {
+        [early ? 'earlyCancelCount' : 'lateCancelCount']: increment(1),
+        updatedAt: new Date(),
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Cancel saved, counter update failed', e?.code || 'counter');
+    }
+    return { ok: true, kind: early ? 'early' : 'late' };
   }
 
   /** Hard-delete from Firestore immediately (owner/teacher). */
